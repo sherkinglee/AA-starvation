@@ -1,0 +1,1642 @@
+---
+title: "Codes for reproducing the results in the manuscript"
+output: html_notebook
+date: 20260422
+author: Fajin Li
+email: lifajin@westlake.edu.cn
+---
+
+## 01. Reads Statisitcs and in-frame ratios
+
+```{r}
+reads_num <- na.omit(read.table("./SourceData/ReadsNum.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t"))
+reads_ratio <- na.omit(read.table("./SourceData/ReadsRatio.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t"))
+library(ggpubr)
+library(ggplot2)
+library(ggplotify)
+library(eoffice)
+library(reshape2)
+
+reads_num_plot <- reads_num[,c(5:ncol(reads_num))]
+reads_num_plot.melt <- melt(reads_num_plot)
+p1 <- ggboxplot(reads_num_plot.melt,x="variable",y="value",color="variable",palette = "nejm",add="jitter")+labs(x="",y="Reads Number")
+print(p1)
+ggsave('Reads_number_all_sample.pdf',plot=p1,width=10,height=6.5)
+ggsave('Reads_number_all_sample.png',plot=p1,width=10,height=6.5)
+# topptx(p1,"Reads_number_all_sample.pptx",width = 10,height = 6.5)
+
+
+reads_ratio_plot <- reads_ratio[,c(5:ncol(reads_ratio))]
+reads_ratio_plot.melt <- melt(reads_ratio_plot)
+p2 <- ggboxplot(reads_ratio_plot.melt,x="variable",y="value",color="variable",palette = "nejm",add="jitter")+labs(x="",y="Reads Ratio")
+print(p2)
+ggsave('Reads_Ratio_all_sample.pdf',plot=p2,width=10,height=6.5)
+ggsave('Reads_Ratio_all_sample.png',plot=p2,width=10,height=6.5)
+# topptx(p2,"Reads_Ratio_all_sample.pptx",width = 10,height = 6.5)
+
+
+
+
+inframe_ratio <- read.table("./SourceData/in_frame_ratio.txt",header = T,row.names = 1,sep = "\t",stringsAsFactors = F,check.names = F)
+inframe_ratio_plot <- inframe_ratio
+inframe_ratio_plot.melt <- melt(inframe_ratio_plot)
+p3 <- ggboxplot(inframe_ratio_plot.melt,x="variable",y="value",color="variable",palette = "nejm",add="jitter")+labs(x="",y="Ratio of in-frame reads")
+my_comparisons <- list(c("Frame0", "Frame1"),c("Frame0","Frame2"),c("Frame1","Frame2"))
+p3 = p3 + stat_compare_means(comparisons = my_comparisons,size = 8,method = "wilcox.test")
+print(p3)
+ggsave('InframeReads_ratio_all_sample.pdf',plot=p3,width=10,height=6.5)
+ggsave('InframeReads_ratio_all_sample.png',plot=p3,width=10,height=6.5)
+# topptx(p3,"InframeReads_ratio_all_sample.pptx",width = 10,height = 6.5)
+```
+
+## 02. Reads length
+
+```{r}
+reads_length <- na.omit(read.table("./SourceData/Reads_length.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t",row.names = 1))
+reads_length <- as.data.frame(t(reads_length))
+sampleInfo <- read.table("./SourceData/all_sample_info.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t")
+reads_length <- reads_length[sampleInfo$SRRID,]
+reads_length <- reads_length[,order(colnames(reads_length))]
+# write.table(reads_length,"Reads_length_stastics.txt",quote = F,row.names = T,col.names = T,sep = "\t")
+library(ggpubr)
+library(ggplot2)
+library(ggplotify)
+library(eoffice)
+library(reshape2)
+library(RColorBrewer)
+
+reads_length_plot <- reads_length
+reads_length_plot.melt <- melt(reads_length_plot)
+p4 <- ggboxplot(reads_length_plot.melt,x="variable",y="value",color="variable",palette = "npc")+labs(x="",y="Reads Number")
+print(p4)
+ggsave('Reads_length_all_sample.pdf',plot=p4,width=10,height=6.5)
+ggsave('Reads_length_all_sample.png',plot=p4,width=10,height=6.5)
+# topptx(p4,"Reads_length_all_sample.pptx",width = 10,height = 6.5)
+```
+## 03. PCA for gene-level and transcript-level RPKM
+```{r}
+all_sample_info <- read.table("./SourceData/all_sample_info.txt",sep="\t",stringsAsFactors = F,check.names = F,header = T)
+all_sample_gene_level_CDS_RPKM <- read.table("./SourceData/all_sample_gene_level_CDS_RPKM_selected.txt",header = T,sep = "\t",stringsAsFactors = F,check.names = F)
+all_sample_trans_level_CDS_RPKM <- read.table("./SourceData/all_sample_trans_level_CDS_RPKM_selected.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+trans_data <- all_sample_trans_level_CDS_RPKM
+gene_data <- all_sample_gene_level_CDS_RPKM[which(all_sample_gene_level_CDS_RPKM$gene_id%in%all_sample_trans_level_CDS_RPKM$gene_id),]
+gene_data["trans_id"] <- trans_data[match(gene_data$gene_id,trans_data$gene_id),3]
+gene_data["gene_name"] <- trans_data[match(gene_data$gene_id,trans_data$gene_id),2]
+library(dplyr)
+gene_data <- select(gene_data,gene_id,gene_name,trans_id,everything())
+
+rownames(trans_data) <- trans_data$gene_id
+rownames(gene_data) <- gene_data$gene_id
+trans_data <- trans_data[gene_data$gene_id,]
+
+
+plot.pca=function(data,group){
+  colnames(group)=c("ID","Groups")
+  ID=unique(as.vector(group$ID))
+  subdata=subset(data,select=ID)
+  subdata=log2(subdata)
+  subdata=t(na.omit(subdata))
+  data.pca = prcomp(subdata,scale. = TRUE)
+  summary(data.pca)
+  pca=as.data.frame(data.pca$x)
+  pca$ID=rownames(pca)
+  pca=merge(pca,group,by="ID")
+  percent1=sprintf("%.1f%%",data.pca$sdev[1]^2/sum(data.pca$sdev^2)*100)
+  percent2=sprintf("%.1f%%",data.pca$sdev[2]^2/sum(data.pca$sdev^2)*100)
+  xlabel=paste("PC1 (",percent1,")")
+  ylabel=paste("PC2 (",percent2,")")
+  
+  p <- ggscatter(pca,x="PC1",y="PC2",color="Groups",
+                 ellipse=F,ellipse.type='confidence',show.legend.text=F, size=3, 
+                 font.label=c(8,"plain","black")) + 
+    theme_bw() + 
+    xlab(xlabel)+ylab(ylabel)+
+    guides(color=guide_legend(title="Sample type"), fill=F) + 
+    theme(axis.text=element_text(size=12,color='black'),
+          axis.title=element_text(size=12,color='black'),
+          legend.title=element_text(size=12,color='black'),
+          legend.text=element_text(size=12,color='black'))
+  return(p)
+}
+
+
+library(ggpubr)
+library(ggrepel)
+library(eoffice)
+sample_info <- all_sample_info[,c("SampleID","Condition")]
+plot.data <- gene_data
+plot.data[plot.data==0] <-NA
+gene_level_RPKM.pca <- plot.pca(plot.data[,-1],sample_info)
+print(gene_level_RPKM.pca)
+ggsave('gene_level_RPKM.pca.pdf',plot=gene_level_RPKM.pca,width=8.5,height=7.5)
+ggsave('gene_level_RPKM.pca.png',plot=gene_level_RPKM.pca,width=8.5,height=7.5)
+# topptx(gene_level_RPKM.pca,"gene_level_RPKM.pca.pptx",width=8.5,height=7.5)
+
+
+plot.data <- trans_data
+plot.data[plot.data==0] <-NA
+trans_level_RPKM.pca <- plot.pca(plot.data[,-1],sample_info)
+print(trans_level_RPKM.pca)
+ggsave('trans_level_RPKM.pca.pdf',plot=trans_level_RPKM.pca,width=8.5,height=7.5)
+ggsave('trans_level_RPKM.pca.png',plot=trans_level_RPKM.pca,width=8.5,height=7.5)
+# topptx(trans_level_RPKM.pca,"trans_level_RPKM.pca.pptx",width=8.5,height=7.5)
+
+```
+
+
+## 04. correlation of log2FC of gene-level and transcript-level RPKM
+```{r}
+library(dplyr)
+gene_level_RPKM_log2FC <- read.table("./SourceData/all_sample_gene_level_CDS_RPKM_log2FC.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+trans_level_RPKM_log2FC <- read.table("./SourceData/all_sample_trans_level_CDS_RPKM_log2FC.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+longest_trans_info <- read.table("./SourceData/longest.transcripts.info.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+all_trans_info <- read.table("./SourceData/all.transcripts.info.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+log2FC_sample_info <- read.table("./SourceData/all_sample_treatment_conditions_log2FC.txt",header = T,sep = "\t",stringsAsFactors = F,check.names = F)
+
+gene_level_RPKM_log2FC <- gene_level_RPKM_log2FC[,c("gene_id",log2FC_sample_info$SampleID)]
+trans_level_RPKM_log2FC <- trans_level_RPKM_log2FC[,c("transcript_id",log2FC_sample_info$SampleID)]
+trans_level_RPKM_log2FC["gene_id"] <- longest_trans_info[match(trans_level_RPKM_log2FC$transcript_id,longest_trans_info$trans_id),4]
+trans_level_RPKM_log2FC <- select(trans_level_RPKM_log2FC,gene_id,transcript_id,everything())
+trans_level_RPKM_log2FC <- trans_level_RPKM_log2FC[match(gene_level_RPKM_log2FC$gene_id,trans_level_RPKM_log2FC$gene_id),]
+
+cor.matrix <- cor(gene_level_RPKM_log2FC[,2:ncol(gene_level_RPKM_log2FC)],trans_level_RPKM_log2FC[,3:ncol(trans_level_RPKM_log2FC)])
+library(gplots)
+library(RColorBrewer)
+library(circlize)
+library(ComplexHeatmap)
+library(ggpubr)
+library(ggplotify)
+library(eoffice)
+
+z<-Heatmap(
+  as.matrix(cor.matrix),
+  col = colorRamp2(c(-1,0,1), 
+                   rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+  cluster_rows = T,
+  cluster_columns = T,
+  clustering_distance_columns = 'euclidean',
+  clustering_method_columns ="ward.D2",
+  clustering_distance_rows = 'euclidean',
+  clustering_method_rows ="ward.D2",
+  row_names_gp = gpar(fontsize=8),
+  column_names_gp = gpar(fontsize=8),
+  heatmap_legend_param = list(title="Pearson\nCorrelation",legend_direction="vertical"))
+z.t <- as.ggplot(z)
+print(z.t)
+ggsave('Correlation_of_log2FC_gene_and_trans_level_clustered.pdf',plot=z.t,width=11,height=10)
+ggsave('Correlation_of_log2FC_gene_and_trans_level_clustered.png',plot=z.t,width=11,height=10)
+# topptx(z.t,"Correlation_of_log2FC_gene_and_trans_level_clustered.pptx",width=11,height=10)
+
+
+trans_data <- trans_level_RPKM_log2FC
+gene_data <- gene_level_RPKM_log2FC
+
+
+corList <- list()
+for (i in seq(1:(ncol(gene_data)-1))){
+  sample1=colnames(gene_data)[i+1]
+  sample2=colnames(trans_data)[2+i]
+  if (sample1 != sample2){
+    break
+  }
+  tmpdata=data.frame(trans=trans_data[sample1],gene=gene_data[sample2])
+  tmpdata[tmpdata==0]=NA
+  tmpdata=na.omit(tmpdata)
+  tmpcor=as.numeric(cor.test(tmpdata[,1],tmpdata[,2])$estimate)
+  tmppvale=as.numeric(cor.test(tmpdata[,1],tmpdata[,2])$p.value)
+  corList[[i]]=c(sample1,tmpcor,tmppvale)
+}
+corListdata <- as.data.frame(t(as.data.frame(corList)))
+corListdata$V2 <- unlist(lapply(corListdata$V2,function(x){as.numeric(x)}))
+corListdata$V3 <- unlist(lapply(corListdata$V3,function(x){as.numeric(x)}))
+
+cor.density.plot <- ggplot(data=corListdata,aes(x=V2,color="red"))+geom_density(linewidth=1)+theme_bw()+
+  labs(x="Perason Correlation",y="Density",title="Correlation of log2FC between gene level RPKM and trans level RPKM")+
+  theme(plot.title = element_text(hjust=0.5),
+        axis.title = element_text(size=15),
+        axis.text = element_text(size=12,colour = "black"))#+
+  #geom_vline(xintercept = median(corListdata$V2),col="blue",linetype="dashed")
+print(cor.density.plot)
+ggsave('Correlation_density_plot_of_log2FC_between_gene_and_trans_level_RPKM.pdf',plot=cor.density.plot)
+ggsave('Correlation_density_plot_of_log2FC_between_gene_and_trans_level_RPKM.png',plot=cor.density.plot)
+# topptx(cor.density.plot,"Correlation_density_plot_of_log2FC_between_gene_and_trans_level_RPKM.pptx")
+
+colnames(corListdata) <- c("datasets","Correlation","pvalue")
+write.table(corListdata[,1:2],"Correlation_density_plot_of_log2FC_between_gene_and_trans_level_RPKM.txt",quote = F,sep = "\t",row.names = F,col.names = T)
+```
+
+## 05. PCA for log2FC of transcript-level RPKM
+```{r}
+plot.pca=function(data,group){
+  colnames(group)=c("ID","Groups")
+  ID=unique(as.vector(group$ID))
+  subdata=subset(data,select=ID)
+  # subdata=log2(subdata)
+  subdata=t(na.omit(subdata))
+  data.pca = prcomp(subdata,scale. = TRUE)
+  summary(data.pca)
+  pca=as.data.frame(data.pca$x)
+  pca$ID=rownames(pca)
+  pca=merge(pca,group,by="ID")
+  percent1=sprintf("%.1f%%",data.pca$sdev[1]^2/sum(data.pca$sdev^2)*100)
+  percent2=sprintf("%.1f%%",data.pca$sdev[2]^2/sum(data.pca$sdev^2)*100)
+  xlabel=paste("PC1 (",percent1,")")
+  ylabel=paste("PC2 (",percent2,")")
+  
+  p <- ggscatter(pca,x="PC1",y="PC2",color="Groups",#label = "ID",
+                 ellipse=F,ellipse.type='confidence',show.legend.text=F, size=3, 
+                 font.label=c(8,"plain","black")) + 
+    theme_bw() + 
+    xlab(xlabel)+ylab(ylabel)+
+    guides(color=guide_legend(title="Sample type"), fill=F) + 
+    theme(axis.text=element_text(size=12,color='black'),
+          axis.title=element_text(size=12,color='black'),
+          legend.title=element_text(size=12,color='black'),
+          legend.text=element_text(size=12,color='black'))
+  return(p)
+}
+
+
+library(ggpubr)
+library(ggrepel)
+library(eoffice)
+sample_info <- log2FC_sample_info[,c(2,3)]
+plot.data <- gene_data
+plot.data[plot.data==0] <-NA
+gene_level_RPKM_log2FC.pca <- plot.pca(plot.data[,-1],sample_info)
+print(gene_level_RPKM_log2FC.pca)
+ggsave('gene_level_RPKM_log2FC.pca.pdf',plot=gene_level_RPKM_log2FC.pca,width=8.5,height=7.5)
+ggsave('gene_level_RPKM_log2FC.pca.png',plot=gene_level_RPKM_log2FC.pca,width=8.5,height=7.5)
+
+
+plot.data <- trans_data
+plot.data[plot.data==0] <-NA
+trans_level_RPKM_log2FC.pca <- plot.pca(plot.data[,-c(1,2)],sample_info)
+print(trans_level_RPKM_log2FC.pca)
+ggsave('trans_level_RPKM_log2FC.pca.pdf',plot=trans_level_RPKM_log2FC.pca,width=8.5,height=7.5)
+ggsave('trans_level_RPKM_log2FC.pca.png',plot=trans_level_RPKM_log2FC.pca,width=8.5,height=7.5)
+# topptx(trans_level_RPKM_log2FC.pca,"trans_level_RPKM_log2FC.pca.pptx",width=8.5,height=7.5)
+
+```
+
+## 06. DE gene number of each dataset
+```{r}
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(eoffice)
+DE_gene_number <- read.table("./SourceData/AA_starvation_DE_gene_number.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+rownames(DE_gene_number) <- DE_gene_number$DE
+DE_gene_number <- DE_gene_number[,c(1,2,3)]
+DE_gene_number.melt <- melt(DE_gene_number)
+
+
+p <- ggplot(data=DE_gene_number.melt,aes(x=reorder(DE,-value),y=ifelse(variable=="up",value,-value),fill=variable))+
+  geom_bar(stat="identity")+#geom_text(aes(label=value,vjust=ifelse(variable=="up",-0.4,1.1)))+
+  scale_y_continuous(labels = abs,expand=expansion(mult=c(0.1,0.1)))+theme_bw()+
+  theme(axis.text.x = element_text(vjust=0.5,hjust=1,angle=90))+labs(x="",y="Number")+scale_fill_manual(values=c("#E64B35FF","#4DBBD5FF"))
+print(p)
+ggsave('AA_starvation_DE_gene_number.pdf',plot=p,width=10,height=6.5)
+ggsave('AA_starvation_DE_gene_number.png',plot=p,width=10,height=6.5)
+# topptx(p,"AA_starvation_DE_gene_number.pptx",width = 10,height = 6.5)
+```
+## 07. Clustering of all DE genes
+```{r}
+Ribo_RPKM_trans_level_log2FC <- read.table("./SourceData/all_sample_trans_level_CDS_RPKM_log2FC.txt",sep="\t",stringsAsFactors = F,header = T,check.names = F)
+rownames(Ribo_RPKM_trans_level_log2FC) <- Ribo_RPKM_trans_level_log2FC$transcript_id
+all_sample_log2FC_info <- read.table("./SourceData/all_sample_treatment_conditions_log2FC.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+
+DE_union_geneID.data <- read.table("./SourceData/DE_union_geneID.txt",header = T)
+DE_union_transID <- DE_union_geneID.data$DE_union_transID
+
+library(RColorBrewer)
+library(circlize)
+library(eoffice)
+library(ComplexHeatmap)
+library(ggsci)
+library("scales")
+library(ggplotify)
+library(ggpubr)
+set.seed(1111)
+annotation1 <- HeatmapAnnotation(df=data.frame(SampleType=all_sample_log2FC_info$Class,
+                                               CellLine=all_sample_log2FC_info$Cell_line,
+                                               BreastCancers=all_sample_log2FC_info$BreastCancers),
+                                 show_legend = T,show_annotation_name = T,
+                                 annotation_legend_param = list(SampleType=list(title="SampleType",legend_direction="vertical"),
+                                                                CellLine=list(title="CellLine"),
+                                                                BreastCancers=list(title="BreastCancers")),
+                                 col=list(BreastCancers=c("N"="grey80","Y"="black"),
+                                          SampleType=c("mTORC1 inhibitor"="#E64B35FF",
+                                                       "Myc"="#4DBBD5FF","AA starvation"="#00A087FF",
+                                                       "Serum starvation"="#3C5488FF","MNK inhibitor"="#F39B7FFF","ER stress"="#8491B4FF")))
+rownames(Ribo_RPKM_trans_level_log2FC) <- Ribo_RPKM_trans_level_log2FC$transcript_id
+Ribo_RPKM_trans_level_log2FC_DE_union <- Ribo_RPKM_trans_level_log2FC[DE_union_transID,]
+
+
+Ribo_RPKM_trans_level_log2FC_zerosum <- apply(Ribo_RPKM_trans_level_log2FC_DE_union[,2:ncol(Ribo_RPKM_trans_level_log2FC_DE_union)],1,function(x){sum(x==0)})
+Ribo_RPKM_trans_level_log2FC_filterZeros <- Ribo_RPKM_trans_level_log2FC_DE_union[which(Ribo_RPKM_trans_level_log2FC_zerosum==0),]
+Ribo_RPKM_trans_level_log2FC_filterZeros <- Ribo_RPKM_trans_level_log2FC_filterZeros[,all_sample_log2FC_info$SampleID]
+zzzz<-Heatmap(as.matrix(Ribo_RPKM_trans_level_log2FC_filterZeros[,1:ncol(Ribo_RPKM_trans_level_log2FC_filterZeros)]),
+            col = colorRamp2(c(-1,0,1), rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+            cluster_rows = T,cluster_columns = T,clustering_distance_columns = 'euclidean',clustering_method_columns ="ward.D2",
+            clustering_method_rows = "ward.D2",clustering_distance_rows = "euclidean",
+            heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),
+            column_names_gp = gpar(fontsize=8),show_row_names = F,top_annotation = annotation1)
+zzzz.ht <- draw(zzzz)
+Ribo_RPKM_trans_level_log2FC_ordered = Ribo_RPKM_trans_level_log2FC_filterZeros[,1:ncol(Ribo_RPKM_trans_level_log2FC_filterZeros)][row_order(zzzz.ht),column_order(zzzz.ht)]
+Ribo_RPKM_trans_level_log2FC_ordered <- Ribo_RPKM_trans_level_log2FC_DE_union[rownames(Ribo_RPKM_trans_level_log2FC_ordered),c("transcript_id",colnames(Ribo_RPKM_trans_level_log2FC_ordered))]
+# write.table(Ribo_RPKM_trans_level_log2FC_ordered,"trans_level_RPKM_log2FC_DE_union_ordered.txt",quote = F,sep = "\t",row.names = F,col.names = T)
+zzzz <- as.ggplot(zzzz)
+print(zzzz)
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered.pdf',plot=zzzz,width=9,height=10)
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered.png',plot=zzzz,width=9,height=10)
+
+
+### split into 4 clusters for transcript
+library(dendextend)
+r.dend <- row_dend(zzzz.ht) ##  获取行分类树
+clusters <- cutree(r.dend,k=3) ## 切树分支
+
+zzzz.ht_split<- Heatmap(as.matrix(Ribo_RPKM_trans_level_log2FC_filterZeros[,1:ncol(Ribo_RPKM_trans_level_log2FC_filterZeros)]), split = clusters,col = colorRamp2(c(-1,0,1), rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+            cluster_rows = T,cluster_columns = T,clustering_distance_columns = 'euclidean',clustering_method_columns ="ward.D2",
+            clustering_method_rows = "ward.D2",clustering_distance_rows = "euclidean",
+            heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),
+            column_names_gp = gpar(fontsize=8),show_row_names = F,top_annotation = annotation1)
+zzzz.ht_split.dw <- draw(zzzz.ht_split)
+Ribo_RPKM_trans_level_log2FC_ordered2 = Ribo_RPKM_trans_level_log2FC_filterZeros[,1:ncol(Ribo_RPKM_trans_level_log2FC_filterZeros)][unlist(row_order(zzzz.ht_split.dw)),column_order(zzzz.ht_split.dw)]
+Ribo_RPKM_trans_level_log2FC_ordered2 <- Ribo_RPKM_trans_level_log2FC_DE_union[rownames(Ribo_RPKM_trans_level_log2FC_ordered2),c("transcript_id",colnames(Ribo_RPKM_trans_level_log2FC_ordered2))]
+# write.table(Ribo_RPKM_trans_level_log2FC_ordered2,"trans_level_RPKM_log2FC_DE_union_ordered_splited.txt",quote = F,sep = "\t",row.names = F,col.names = T)
+zzzz.ht_split <- as.ggplot(zzzz.ht_split)
+print(zzzz.ht_split)
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered_splited.pdf',plot=zzzz.ht_split,width=9,height=10)
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered_splited.png',plot=zzzz.ht_split,width=9,height=10)
+# topptx(zzzz.ht_split,'trans_level_RPKM_log2FC_DE_union_ordered_splited.pptx',width=9,height=10)
+```
+## 08. Functional enrichment for 3 cluster genes
+```{r}
+zzzz_transID_clusters <- data.frame(transID=rownames(Ribo_RPKM_trans_level_log2FC_ordered2),clusters=rep(c(1,3,2),times=c(length(row_order(zzzz.ht_split.dw)[[1]]),length(row_order(zzzz.ht_split.dw)[[3]]),length(row_order(zzzz.ht_split.dw)[[2]])))) ## 获取分类之后的transcript id
+zzzz_transID_clusters["GeneID"] <- longest_trans_info[match(zzzz_transID_clusters$transID,longest_trans_info$trans_id),4]
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+zzzz_transID_clusters_genesID <- unique(zzzz_transID_clusters$GeneID)
+
+zzzz_transID_clusters_genesID_transformed <- bitr(zzzz_transID_clusters_genesID,fromType="ENSEMBL", toType=c("ENTREZID","SYMBOL"), OrgDb="org.Hs.eg.db")
+
+zzzz_transID_clusters["Entrez"] <- zzzz_transID_clusters_genesID_transformed[match(zzzz_transID_clusters$GeneID,zzzz_transID_clusters_genesID_transformed$ENSEMBL),2]
+zzzz_transID_clusters["Cluster"] <- 1
+zzzz_transID_clusters[zzzz_transID_clusters$clusters==1,5] <- "C1"
+zzzz_transID_clusters[zzzz_transID_clusters$clusters==2,5] <- "C2"
+zzzz_transID_clusters[zzzz_transID_clusters$clusters==3,5] <- "C3"
+
+zzzz_transID_clusters["GeneName"] <- longest_trans_info[match(zzzz_transID_clusters$transID,longest_trans_info$trans_id),5]
+
+# write.table(zzzz_transID_clusters,"trans_level_RPKM_log2FC_DE_union_ordered_splited_transID.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+
+zzzz_transID_clusters.BP <- compareCluster(geneClusters = Entrez~Cluster,data=zzzz_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="BP")
+zzzz_transID_clusters.CC <- compareCluster(geneClusters = Entrez~Cluster,data=zzzz_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="CC")
+zzzz_transID_clusters.MF <- compareCluster(geneClusters = Entrez~Cluster,data=zzzz_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="MF")
+zzzz_transID_clusters.All <- compareCluster(geneClusters = Entrez~Cluster,data=zzzz_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="All")
+# zzzz_transID_clusters.KEGG <- compareCluster(geneClusters = Entrez~Cluster,data=zzzz_transID_clusters,fun="enrichKEGG",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05)
+
+zzzz_transID_clusters.BP.simplify <- simplify(zzzz_transID_clusters.BP)
+zzzz_transID_clusters.CC.simplify <- simplify(zzzz_transID_clusters.CC)
+zzzz_transID_clusters.MF.simplify <- simplify(zzzz_transID_clusters.MF)
+
+
+gbp <- dotplot(zzzz_transID_clusters.BP.simplify, x="Cluster") 
+gcc <- dotplot(zzzz_transID_clusters.CC.simplify, x="Cluster")
+gmf <- dotplot(zzzz_transID_clusters.MF.simplify, x="Cluster")
+gall <- dotplot(zzzz_transID_clusters.All, x="Cluster")
+# gkegg <- dotplot(zzzz_transID_clusters.KEGG, x="Cluster")
+
+print(gbp)
+
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered_splited_GOBP.pdf',plot=gbp,width=8.5,height=7.5)
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered_splited_GOBP.png',plot=gbp,width=8.5,height=7.5)
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered_splited_GOCC.pdf',plot=gcc,width=8.5,height=7.5)
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered_splited_GOCC.png',plot=gcc,width=8.5,height=7.5)
+# topptx(gbp,'trans_level_RPKM_log2FC_DE_union_ordered_splited_GOBP.pptx',width=8.5,height=7.5)
+# 
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered_splited_GOMF.pdf',plot=gmf,width=8.5,height=7.5)
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered_splited_GOMF.png',plot=gmf,width=8.5,height=7.5)
+
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered_splited_GOall.pdf',plot=gall,width=8.5,height=7.5)
+ggsave('trans_level_RPKM_log2FC_DE_union_ordered_splited_GOall.png',plot=gall,width=8.5,height=7.5)
+# 
+# 
+write.table(zzzz_transID_clusters.BP.simplify,"trans_level_RPKM_log2FC_DE_union_ordered_splited_GOBP.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(zzzz_transID_clusters.CC.simplify,"trans_level_RPKM_log2FC_DE_union_ordered_splited_GOCC.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(zzzz_transID_clusters.MF.simplify,"trans_level_RPKM_log2FC_DE_union_ordered_splited_GOMF.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(zzzz_transID_clusters.All,"trans_level_RPKM_log2FC_DE_union_ordered_splited_GOAll.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+# write.table(zzzz_transID_clusters.KEGG,"trans_level_RPKM_log2FC_DE_union_ordered_splited_KEGG.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+```
+
+## 09. Translation regulation of Leu starvation
+```{r}
+library(RColorBrewer)
+library(circlize)
+library(eoffice)
+library(ComplexHeatmap)
+library(ggsci)
+library("scales")
+library(ggplotify)
+library(ggpubr)
+set.seed(1111)
+
+
+# DE.common.log2FC <- read.table("./SourceData/DEgenes_all_leu_starvation.txt",header = T)
+# rownames(DE.common.log2FC) <- DE.common.log2FC$geneName
+DE.top50.common.log2FC <- read.table("./SourceData/DEgenes_top50_leu_starvation.txt",header = T)
+rownames(DE.top50.common.log2FC) <- DE.top50.common.log2FC$geneName
+
+z1<-Heatmap(as.matrix(DE.top50.common.log2FC[,-1]),
+            col = colorRamp2(c(-1,0,1), rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+            cluster_rows = T,cluster_columns = T,clustering_distance_columns = 'euclidean',clustering_method_columns ="ward.D2",
+            clustering_method_rows = "ward.D2",clustering_distance_rows = "euclidean",
+            heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),
+            column_names_gp = gpar(fontsize=10),show_row_names = F)
+library(dendextend)
+r.dend <- row_dend(z1) ##  获取行分类树
+clusters <- cutree(r.dend,k=2) ## 切树分支
+
+z1_split<- Heatmap(as.matrix(DE.top50.common.log2FC[,-1]), split = clusters,col = colorRamp2(c(-1,0,1), rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+            cluster_rows = T,cluster_columns = T,clustering_distance_columns = 'euclidean',clustering_method_columns ="ward.D2",
+            clustering_method_rows = "ward.D2",clustering_distance_rows = "euclidean",
+            heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),
+            column_names_gp = gpar(fontsize=8),show_row_names = F)
+z1_split.dw <- draw(z1_split)
+DE.top50.common.log2FC_ordered2 = DE.top50.common.log2FC[,2:ncol(DE.top50.common.log2FC)][unlist(row_order(z1_split.dw)),column_order(z1_split.dw)]
+
+# write.table(DE.top50.common.log2FC_ordered2,"Leu_starvation_log2FC_top50_DEgenes_order.txt",quote = F,sep = "\t",row.names = T,col.names = T)
+z1_split <- as.ggplot(z1_split)
+print(z1_split)
+# ggsave('Leu_starvation_log2FC_top50_DEgenes_order.pdf',plot=z1_split,width=9,height=10)
+# ggsave('Leu_starvation_log2FC_top50_DEgenes_order.png',plot=z1_split,width=9,height=10)
+# topptx(z1_split,'Leu_starvation_log2FC_top50_DEgenes_order.pptx',width=9,height=10)
+
+z1_transID_clusters <- data.frame(transID=rownames(DE.top50.common.log2FC_ordered2),clusters=rep(c(2,1),times=c(length(row_order(z1_split.dw)[[1]]),length(row_order(z1_split.dw)[[2]])))) ## 获取分类之后的transcript id
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+z_transID_clusters_geneName <- unique(z1_transID_clusters$transID)
+
+z_transID_clusters_geneName_transformed <- bitr(z_transID_clusters_geneName,fromType="SYMBOL", toType=c("ENTREZID","ENSEMBL"), OrgDb="org.Hs.eg.db")
+
+z1_transID_clusters["Entrez"] <- z_transID_clusters_geneName_transformed[match(z1_transID_clusters$transID,z_transID_clusters_geneName_transformed$SYMBOL),2]
+z1_transID_clusters["Cluster"] <- 1
+z1_transID_clusters[z1_transID_clusters$clusters==1,4] <- "C1"
+z1_transID_clusters[z1_transID_clusters$clusters==2,4] <- "C2"
+
+
+
+# write.table(z1_transID_clusters,"Leu_starvation_log2FC_top50_DEgenes_geneID_splited.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+
+z1_transID_clusters.BP <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="BP")
+z1_transID_clusters.CC <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="CC")
+z1_transID_clusters.MF <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="MF")
+z1_transID_clusters.All <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="All")
+# zzzz_transID_clusters.KEGG <- compareCluster(geneClusters = Entrez~Cluster,data=zzzz_transID_clusters,fun="enrichKEGG",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05)
+
+z1_transID_clusters.BP.simplify <- simplify(z1_transID_clusters.BP)
+z1_transID_clusters.CC.simplify <- simplify(z1_transID_clusters.CC)
+z1_transID_clusters.MF.simplify <- simplify(z1_transID_clusters.MF)
+
+
+gbp <- dotplot(z1_transID_clusters.BP.simplify, x="Cluster") 
+gcc <- dotplot(z1_transID_clusters.CC.simplify, x="Cluster")
+gmf <- dotplot(z1_transID_clusters.MF.simplify, x="Cluster")
+gall <- dotplot(z1_transID_clusters.All, x="Cluster")
+# gkegg <- dotplot(zzzz_transID_clusters.KEGG, x="Cluster")
+
+print(gall)
+ggsave('Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.pdf',plot=gbp,width=8.5,height=7.5)
+ggsave('Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.png',plot=gbp,width=8.5,height=7.5)
+ggsave('Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOCC.pdf',plot=gcc,width=8.5,height=7.5)
+ggsave('Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOCC.png',plot=gcc,width=8.5,height=7.5)
+# topptx(gbp,'Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.pptx',width=8.5,height=7.5)
+# 
+ggsave('Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOMF.pdf',plot=gmf,width=8.5,height=7.5)
+ggsave('Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOMF.png',plot=gmf,width=8.5,height=7.5)
+# 
+ggsave('Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOall.pdf',plot=gall,width=8.5,height=7.5)
+ggsave('Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOall.png',plot=gall,width=8.5,height=7.5)
+# topptx(gall,'Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOall.pptx',width=8.5,height=7.5)
+# 
+# 
+write.table(z1_transID_clusters.BP.simplify,"Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(z1_transID_clusters.CC.simplify,"Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOCC.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(z1_transID_clusters.MF.simplify,"Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOMF.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(z1_transID_clusters.All,"Leu_starvation_log2FC_top50_DEgenes_geneID_splited_GOAll.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+
+
+
+
+### boxplot for C1 and C2 genes
+DE.top50.common.log2FC_ordered2$Clusters <- z1_transID_clusters[match(rownames(DE.top50.common.log2FC_ordered2),z1_transID_clusters$transID),4]
+
+library(reshape2)
+DE.top50.common.log2FC_ordered2.melt <- melt(DE.top50.common.log2FC_ordered2)
+DE.top50.common.log2FC_ordered2.melt$Group <- "BreastCancers"
+DE.top50.common.log2FC_ordered2.melt[which(DE.top50.common.log2FC_ordered2.melt$variable%in%c("HEK293.12h.noCHX","HEK293T.3h","Hela.3h","HEK293T.6h","HCT116.3h","HEK293.12h.CHX")),4] <- "NonBreastCancers"
+DE.top50.common.log2FC_ordered2.melt$log2 <- log2(DE.top50.common.log2FC_ordered2.melt$value)
+DE.top50.common.log2FC_ordered2.melt$Clusters <- factor(DE.top50.common.log2FC_ordered2.melt$Clusters,levels = c("C2","C1"))
+
+library(ggpubr)
+library(ggplot2)
+
+p <- ggboxplot(DE.top50.common.log2FC_ordered2.melt,x="variable",y="value",color="Clusters",palette = "nejm",bxp.errorbar = T,add = "mean")+
+  labs(x="",y="log2FC")+scale_color_manual(values =c("C2"="#5e9bd3","C1"="#ee6169"))+facet_wrap(~Clusters,ncol = 1)
+
+my_comparisons <- list(c("SUM159.0.2.24h", "SUM159.12h"),c("SUM159.0.2.24h", "HEK293.12h.noCHX"),c("SUM159.0.2.24h", "HEK293T.3h"),
+                       c("SUM159.0.2.24h", "Hela.3h"),c("SUM159.0.2.24h", "HEK293T.6h"),c("SUM159.0.2.24h", "HCT116.3h"),
+                       c("SUM159.0.2.24h", "HEK293.12h.CHX"),c("SUM159.12h", "HEK293.12h.noCHX"),c("SUM159.12h", "HEK293T.3h"),
+                       c("SUM159.12h", "Hela.3h"),c("SUM159.12h", "HEK293T.6h"),c("SUM159.12h", "HCT116.3h"),c("SUM159.12h", "HEK293.12h.CHX"),
+                       c("HEK293.12h.noCHX", "HEK293T.3h"),c("HEK293.12h.noCHX", "Hela.3h"),c("HEK293.12h.noCHX", "HEK293T.6h"),
+                       c("HEK293.12h.noCHX", "HCT116.3h"),c("HEK293.12h.noCHX", "HEK293.12h.CHX"),
+                       c("HEK293T.3h", "Hela.3h"),c("HEK293T.3h", "HEK293T.6h"),c("HEK293T.3h", "HCT116.3h"),c("HEK293T.3h", "HEK293.12h.CHX"),
+                       c("Hela.3h", "HEK293T.6h"),c("Hela.3h", "HCT116.3h"),c("Hela.3h", "HEK293.12h.CHX"),
+                       c("HEK293T.6h", "HCT116.3h"),c("HEK293T.6h", "HEK293.12h.CHX"),c("HCT116.3h", "HEK293.12h.CHX"))
+p = p + stat_compare_means(comparisons = my_comparisons,size = 8,method = "wilcox.test")
+
+ggsave('Leu_DE_results_boxplot.pdf',plot=p,width=5.5,height=5)
+ggsave('Leu_DE_results_boxplot.png',plot=p,width=5.5,height=5)
+ggsave('Leu_DE_results_boxplot_pvalue.pdf',plot=p,width=9.5,height=18)
+ggsave('Leu_DE_results_boxplot_pvalue.png',plot=p,width=9.5,height=18)
+
+df <- DE.top50.common.log2FC_ordered2.melt
+conditions <- unique(df$variable)
+pairwise_p <- combn(conditions, 2, function(pair) {
+  x <- df$value[df$variable == pair[1]]
+  y <- df$value[df$variable == pair[2]]
+  # 执行 Wilcoxon 检验（默认双侧，非配对）
+  test <- wilcox.test(x, y, exact = FALSE)  # exact=FALSE 处理 ties 时更快
+  data.frame(
+    group1 = pair[1],
+    group2 = pair[2],
+    p.value = test$p.value,
+    statistic = test$statistic,
+    stringsAsFactors = FALSE
+  )
+}, simplify = FALSE)
+
+pairwise_table <- do.call(rbind, pairwise_p)
+
+write.csv(pairwise_table, "Leu_DE_results_boxplot_value_wilcox_pairwise_results.csv", row.names = FALSE)
+
+
+```
+
+
+## 10. Translation regulation of Gln starvation
+```{r}
+library(RColorBrewer)
+library(circlize)
+library(eoffice)
+library(ComplexHeatmap)
+library(ggsci)
+library("scales")
+library(ggplotify)
+library(ggpubr)
+set.seed(1111)
+
+DE.top50.common.log2FC <- read.table("./SourceData/DEgenes_top50_gln_starvation.txt",header = T)
+rownames(DE.top50.common.log2FC) <- DE.top50.common.log2FC$geneName
+
+z1<-Heatmap(as.matrix(DE.top50.common.log2FC[,-1]),
+            col = colorRamp2(c(-1,0,1), rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+            cluster_rows = T,cluster_columns = T,clustering_distance_columns = 'euclidean',clustering_method_columns ="ward.D2",
+            clustering_method_rows = "ward.D2",clustering_distance_rows = "euclidean",
+            heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),
+            column_names_gp = gpar(fontsize=10),show_row_names = F)
+library(dendextend)
+r.dend <- row_dend(z1) ##  获取行分类树
+clusters <- cutree(r.dend,k=4) ## 切树分支
+
+z1_split<- Heatmap(as.matrix(DE.top50.common.log2FC[,-1]), split = clusters,col = colorRamp2(c(-1,0,1), rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+            cluster_rows = T,cluster_columns = T,clustering_distance_columns = 'euclidean',clustering_method_columns ="ward.D2",
+            clustering_method_rows = "ward.D2",clustering_distance_rows = "euclidean",
+            heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),
+            column_names_gp = gpar(fontsize=8),show_row_names = F)
+z1_split.dw <- draw(z1_split)
+DE.top50.common.log2FC_ordered2 = DE.top50.common.log2FC[,2:ncol(DE.top50.common.log2FC)][unlist(row_order(z1_split.dw)),column_order(z1_split.dw)]
+
+# write.table(DE.top50.common.log2FC_ordered2,"Gln_starvation_log2FC_top50_DEgenes_order.txt",quote = F,sep = "\t",row.names = T,col.names = T)
+z1_split <- as.ggplot(z1_split)
+print(z1_split)
+ggsave('Gln_starvation_log2FC_top50_DEgenes_order.pdf',plot=z1_split,width=9,height=10)
+ggsave('Gln_starvation_log2FC_top50_DEgenes_order.png',plot=z1_split,width=9,height=10)
+# topptx(z1_split,'Gln_starvation_log2FC_top50_DEgenes_order.pptx',width=9,height=10)
+
+z1_transID_clusters <- data.frame(transID=rownames(DE.top50.common.log2FC_ordered2),clusters=rep(c(2,3,1,4),times=c(length(row_order(z1_split.dw)[[1]]),length(row_order(z1_split.dw)[[2]]),length(row_order(z1_split.dw)[[3]]),length(row_order(z1_split.dw)[[4]])))) ## 获取分类之后的transcript id
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+z_transID_clusters_geneName <- unique(z1_transID_clusters$transID)
+
+z_transID_clusters_geneName_transformed <- bitr(z_transID_clusters_geneName,fromType="SYMBOL", toType=c("ENTREZID","ENSEMBL"), OrgDb="org.Hs.eg.db")
+
+z1_transID_clusters["Entrez"] <- z_transID_clusters_geneName_transformed[match(z1_transID_clusters$transID,z_transID_clusters_geneName_transformed$SYMBOL),2]
+z1_transID_clusters["Cluster"] <- 1
+z1_transID_clusters[z1_transID_clusters$clusters==1,4] <- "C1"
+z1_transID_clusters[z1_transID_clusters$clusters==2,4] <- "C2"
+z1_transID_clusters[z1_transID_clusters$clusters==3,4] <- "C3"
+z1_transID_clusters[z1_transID_clusters$clusters==4,4] <- "C4"
+
+
+write.table(z1_transID_clusters,"Gln_starvation_log2FC_top50_DEgenes_geneID_splited.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+
+z1_transID_clusters.BP <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="BP")
+z1_transID_clusters.CC <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="CC")
+z1_transID_clusters.MF <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="MF")
+z1_transID_clusters.All <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="All")
+z1_transID_clusters.KEGG <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichKEGG",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05)
+
+z1_transID_clusters.BP.simplify <- simplify(z1_transID_clusters.BP)
+z1_transID_clusters.CC.simplify <- simplify(z1_transID_clusters.CC)
+z1_transID_clusters.MF.simplify <- simplify(z1_transID_clusters.MF)
+
+
+gbp <- dotplot(z1_transID_clusters.BP.simplify, x="Cluster") 
+gcc <- dotplot(z1_transID_clusters.CC.simplify, x="Cluster")
+gmf <- dotplot(z1_transID_clusters.MF.simplify, x="Cluster")
+gall <- dotplot(z1_transID_clusters.All, x="Cluster")
+# gkegg <- dotplot(zzzz_transID_clusters.KEGG, x="Cluster")
+# 
+ggsave('Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.pdf',plot=gbp,width=8.5,height=7.5)
+ggsave('Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.png',plot=gbp,width=8.5,height=7.5)
+ggsave('Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOCC.pdf',plot=gcc,width=8.5,height=7.5)
+ggsave('Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOCC.png',plot=gcc,width=8.5,height=7.5)
+# topptx(gbp,'Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.pptx',width=8.5,height=7.5)
+# 
+ggsave('Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOMF.pdf',plot=gmf,width=8.5,height=7.5)
+ggsave('Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOMF.png',plot=gmf,width=8.5,height=7.5)
+
+ggsave('Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOall.pdf',plot=gall,width=8.5,height=7.5)
+ggsave('Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOall.png',plot=gall,width=8.5,height=7.5)
+# topptx(gall,'Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOall.pptx',width=8.5,height=7.5)
+
+print(gall)
+write.table(z1_transID_clusters.BP.simplify,"Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(z1_transID_clusters.CC.simplify,"Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOCC.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(z1_transID_clusters.MF.simplify,"Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOMF.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(z1_transID_clusters.All,"Gln_starvation_log2FC_top50_DEgenes_geneID_splited_GOAll.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+
+
+
+
+### boxplot for C1 and C2 genes
+DE.top50.common.log2FC_ordered2$Clusters <- z1_transID_clusters[match(rownames(DE.top50.common.log2FC_ordered2),z1_transID_clusters$transID),4]
+DE.top50.common.log2FC_ordered2 <- DE.top50.common.log2FC_ordered2[which(DE.top50.common.log2FC_ordered2$Clusters%in%c("C2","C1")),]
+
+library(reshape2)
+DE.top50.common.log2FC_ordered2.melt <- melt(DE.top50.common.log2FC_ordered2)
+DE.top50.common.log2FC_ordered2.melt$Group <- "BreastCancers"
+DE.top50.common.log2FC_ordered2.melt[which(DE.top50.common.log2FC_ordered2.melt$variable%in%c("Hela_9h","Hela_6h","MCF10A_EtOH_4h")),4] <- "NonBreastCancers"
+DE.top50.common.log2FC_ordered2.melt$Clusters <- factor(DE.top50.common.log2FC_ordered2.melt$Clusters,levels = c("C2","C1"))
+DE.top50.common.log2FC_ordered2.melt <- na.omit(DE.top50.common.log2FC_ordered2.melt)
+library(ggpubr)
+library(ggplot2)
+
+p <- ggboxplot(DE.top50.common.log2FC_ordered2.melt,x="variable",y="value",color="Clusters",palette = "nejm",bxp.errorbar = T,add = "mean")+ylim(-100,100)+
+  labs(x="",y="log2FC")+scale_color_manual(values =c("C2"="#5e9bd3","C1"="#ee6169"))+facet_wrap(~Clusters,ncol = 1)
+
+my_comparisons <- list(c("Hela_9h", "Hela_6h"),c("Hela_9h", "T47D_48h"),c("Hela_9h", "MDAMB231_48h"),c("Hela_9h", "MCF10A_TAM_4h"),
+                       c("Hela_9h", "MCF7_48h"),c("Hela_9h", "MCF10A_EtOH_4h"),c("Hela_9h", "Hs578t_48h"),
+                       c("Hela_6h", "T47D_48h"),c("Hela_6h", "MDAMB231_48h"),c("Hela_6h", "MCF10A_TAM_4h"),c("Hela_6h", "MCF7_48h"),
+                       c("Hela_6h", "MCF10A_EtOH_4h"),c("Hela_6h", "Hs578t_48h"),
+                       c("T47D_48h", "MDAMB231_48h"),c("T47D_48h", "MCF10A_TAM_4h"),c("T47D_48h", "MCF7_48h"),c("T47D_48h", "MCF10A_EtOH_4h"),
+                       c("T47D_48h", "Hs578t_48h"),c("MDAMB231_48h", "MCF10A_TAM_4h"),c("MDAMB231_48h", "MCF7_48h"),
+                       c("MDAMB231_48h", "MCF10A_EtOH_4h"),c("MDAMB231_48h", "Hs578t_48h"),
+                       c("MCF10A_TAM_4h", "MCF7_48h"),c("MCF10A_TAM_4h", "MCF10A_EtOH_4h"),c("MCF10A_TAM_4h", "Hs578t_48h"),
+                       c("MCF7_48h", "MCF10A_EtOH_4h"),c("MCF7_48h", "Hs578t_48h"),c("MCF10A_EtOH_4h", "Hs578t_48h"))
+
+
+p = p + stat_compare_means(comparisons = my_comparisons,size = 8,method = "wilcox.test")
+
+ggsave('Gln_DE_results_boxplot.pdf',plot=p,width=5.5,height=5)
+ggsave('Gln_DE_results_boxplot.png',plot=p,width=5.5,height=5)
+# ggsave('Gln_DE_results_boxplot_value.pdf',plot=p,width=9.5,height=20)
+# ggsave('Gln_DE_results_boxplot_value.png',plot=p,width=9.5,height=20)
+
+## calcualte pvalue and output
+df <- DE.top50.common.log2FC_ordered2.melt
+conditions <- unique(df$variable)
+pairwise_p <- combn(conditions, 2, function(pair) {
+  x <- df$value[df$variable == pair[1]]
+  y <- df$value[df$variable == pair[2]]
+  # 执行 Wilcoxon 检验（默认双侧，非配对）
+  test <- wilcox.test(x, y, exact = FALSE)  # exact=FALSE 处理 ties 时更快
+  data.frame(
+    group1 = pair[1],
+    group2 = pair[2],
+    p.value = test$p.value,
+    statistic = test$statistic,
+    stringsAsFactors = FALSE
+  )
+}, simplify = FALSE)
+
+pairwise_table <- do.call(rbind, pairwise_p)
+
+write.csv(pairwise_table, "Gln_DE_results_boxplot_value_wilcox_pairwise_results.csv", row.names = FALSE)
+
+
+```
+
+
+## 11. Translation regualtion of Serum starvation
+```{r}
+library(RColorBrewer)
+library(circlize)
+library(eoffice)
+library(ComplexHeatmap)
+library(ggsci)
+library("scales")
+library(ggplotify)
+library(ggpubr)
+set.seed(1111)
+
+DE.top50.common.log2FC <- read.table("./SourceData/DEgenes_top50_serum_starvation.txt",header = T)
+rownames(DE.top50.common.log2FC) <- DE.top50.common.log2FC$geneName
+
+z1<-Heatmap(as.matrix(DE.top50.common.log2FC[,-c(1,2)]),
+            col = colorRamp2(c(-1,0,1), rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+            cluster_rows = T,cluster_columns = T,clustering_distance_columns = 'euclidean',clustering_method_columns ="ward.D2",
+            clustering_method_rows = "ward.D2",clustering_distance_rows = "euclidean",
+            heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),
+            column_names_gp = gpar(fontsize=10),show_row_names = F)
+library(dendextend)
+r.dend <- row_dend(z1) ##  获取行分类树
+clusters <- cutree(r.dend,k=3) ## 切树分支
+
+z1_split<- Heatmap(as.matrix(DE.top50.common.log2FC[,-c(1,2)]), split = clusters,col = colorRamp2(c(-1,0,1), rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+            cluster_rows = T,cluster_columns = T,clustering_distance_columns = 'euclidean',clustering_method_columns ="ward.D2",
+            clustering_method_rows = "ward.D2",clustering_distance_rows = "euclidean",
+            heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),
+            column_names_gp = gpar(fontsize=8),show_row_names = F)
+z1_split.dw <- draw(z1_split)
+DE.top50.common.log2FC_ordered2 = DE.top50.common.log2FC[,2:ncol(DE.top50.common.log2FC)][unlist(row_order(z1_split.dw)),column_order(z1_split.dw)]
+
+# write.table(DE.top50.common.log2FC_ordered2,"Serum_starvation_log2FC_top50_DEgenes_order.txt",quote = F,sep = "\t",row.names = T,col.names = T)
+z1_split <- as.ggplot(z1_split)
+print(z1_split)
+ggsave('Serum_starvation_log2FC_top50_DEgenes_order.pdf',plot=z1_split,width=9,height=10)
+ggsave('Serum_starvation_log2FC_top50_DEgenes_order.png',plot=z1_split,width=9,height=10)
+# topptx(z1_split,'Serum_starvation_log2FC_top50_DEgenes_order.pptx',width=9,height=10)
+
+z1_transID_clusters <- data.frame(transID=rownames(DE.top50.common.log2FC_ordered2),clusters=rep(c(3,1,2),times=c(length(row_order(z1_split.dw)[[1]]),length(row_order(z1_split.dw)[[2]]),length(row_order(z1_split.dw)[[3]])))) ## 获取分类之后的transcript id
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+z_transID_clusters_geneName <- unique(z1_transID_clusters$transID)
+
+z_transID_clusters_geneName_transformed <- bitr(z_transID_clusters_geneName,fromType="SYMBOL", toType=c("ENTREZID","ENSEMBL"), OrgDb="org.Hs.eg.db")
+
+z1_transID_clusters["Entrez"] <- z_transID_clusters_geneName_transformed[match(z1_transID_clusters$transID,z_transID_clusters_geneName_transformed$SYMBOL),2]
+z1_transID_clusters["Cluster"] <- 1
+z1_transID_clusters[z1_transID_clusters$clusters==1,4] <- "C1"
+z1_transID_clusters[z1_transID_clusters$clusters==2,4] <- "C2"
+z1_transID_clusters[z1_transID_clusters$clusters==3,4] <- "C3"
+
+
+
+# write.table(z1_transID_clusters,"Serum_starvation_log2FC_top50_DEgenes_geneID_splited.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+
+z1_transID_clusters.BP <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="BP")
+z1_transID_clusters.CC <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="CC")
+z1_transID_clusters.MF <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="MF")
+z1_transID_clusters.All <- compareCluster(geneClusters = Entrez~Cluster,data=z1_transID_clusters,fun="enrichGO",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05,OrgDb='org.Hs.eg.db',ont="All")
+# zzzz_transID_clusters.KEGG <- compareCluster(geneClusters = Entrez~Cluster,data=zzzz_transID_clusters,fun="enrichKEGG",pvalueCutoff=0.05,pAdjustMethod="fdr",qvalueCutoff =0.05)
+
+z1_transID_clusters.BP.simplify <- simplify(z1_transID_clusters.BP)
+z1_transID_clusters.CC.simplify <- simplify(z1_transID_clusters.CC)
+z1_transID_clusters.MF.simplify <- simplify(z1_transID_clusters.MF)
+
+
+gbp <- dotplot(z1_transID_clusters.BP.simplify, x="Cluster") 
+gcc <- dotplot(z1_transID_clusters.CC.simplify, x="Cluster")
+gmf <- dotplot(z1_transID_clusters.MF.simplify, x="Cluster")
+gall <- dotplot(z1_transID_clusters.All, x="Cluster")
+# gkegg <- dotplot(zzzz_transID_clusters.KEGG, x="Cluster")
+# 
+ggsave('Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.pdf',plot=gbp,width=8.5,height=7.5)
+ggsave('Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.png',plot=gbp,width=8.5,height=7.5)
+ggsave('Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOCC.pdf',plot=gcc,width=8.5,height=7.5)
+ggsave('Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOCC.png',plot=gcc,width=8.5,height=7.5)
+# topptx(gbp,'Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.pptx',width=8.5,height=7.5)
+# 
+ggsave('Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOMF.pdf',plot=gmf,width=8.5,height=7.5)
+ggsave('Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOMF.png',plot=gmf,width=8.5,height=7.5)
+# 
+ggsave('Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOall.pdf',plot=gall,width=8.5,height=7.5)
+ggsave('Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOall.png',plot=gall,width=8.5,height=7.5)
+# topptx(gall,'Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOall.pptx',width=8.5,height=7.5)
+
+print(gall)
+write.table(z1_transID_clusters.BP.simplify,"Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOBP.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(z1_transID_clusters.CC.simplify,"Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOCC.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(z1_transID_clusters.MF.simplify,"Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOMF.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+write.table(z1_transID_clusters.All,"Serum_starvation_log2FC_top50_DEgenes_geneID_splited_GOAll.txt",quote = F,row.names = F,col.names = T,sep = "\t")
+
+
+
+
+### boxplot for C1 and C2 genes
+DE.top50.common.log2FC_ordered2$Clusters <- z1_transID_clusters[match(rownames(DE.top50.common.log2FC_ordered2),z1_transID_clusters$transID),4]
+DE.top50.common.log2FC_ordered2$NewClusters <- "C2"
+DE.top50.common.log2FC_ordered2[DE.top50.common.log2FC_ordered2$Clusters=="C1",8] <- "C1"
+DE.top50.common.log2FC_ordered2[DE.top50.common.log2FC_ordered2$Clusters=="C3",8] <- "C1"
+
+library(reshape2)
+DE.top50.common.log2FC_ordered2.melt <- melt(DE.top50.common.log2FC_ordered2[,-7])
+
+DE.top50.common.log2FC_ordered2.melt$NewClusters <- factor(DE.top50.common.log2FC_ordered2.melt$NewClusters,levels = c("C1","C2"))
+
+library(ggpubr)
+library(ggplot2)
+
+p <- ggboxplot(DE.top50.common.log2FC_ordered2.melt,x="variable",y="value",color="NewClusters",palette = "nejm",bxp.errorbar = T,add = "mean")+
+  labs(x="",y="log2FC")+scale_color_manual(values =c("C2"="#5e9bd3","C1"="#ee6169"))+facet_wrap(~NewClusters,ncol = 1)
+
+my_comparisons <- list(c("M231_1h", "HMECs_1h"),c("M231_1h","SUM159PT_1h"),c("M231_1h","HEK293_2h"),c("M231_1h","MCF10A_2h"),c("M231_1h","HMECs_24h"),
+                       c("HMECs_1h","HEK293_2h"),c("HMECs_1h","SUM159PT_1h"),c("HMECs_1h","MCF10A_2h"),c("HMECs_1h","HMECs_24h"),
+                       c("SUM159PT_1h","HEK293_2h"),c("SUM159PT_1h","MCF10A_2h"),c("SUM159PT_1h","HMECs_24h"),
+                       c("HEK293_2h","MCF10A_2h"),c("HEK293_2h","HMECs_24h"),c("MCF10A_2h","HMECs_24h")
+                       )
+p = p + stat_compare_means(comparisons = my_comparisons,size = 8,method = "wilcox.test")
+
+ggsave('Serum_DE_results_boxplot.pdf',plot=p,width=5.5,height=5)
+ggsave('Serum_DE_results_boxplot.png',plot=p,width=5.5,height=5)
+
+
+
+ggsave('Serum_DE_results_boxplot_pvalue.pdf',plot=p,width=8.5,height=15)
+ggsave('Serum_DE_results_boxplot_pvalue.png',plot=p,width=8.5,height=15)
+
+
+df <- DE.top50.common.log2FC_ordered2.melt
+conditions <- unique(df$variable)
+pairwise_p <- combn(conditions, 2, function(pair) {
+  x <- df$value[df$variable == pair[1]]
+  y <- df$value[df$variable == pair[2]]
+  # 执行 Wilcoxon 检验（默认双侧，非配对）
+  test <- wilcox.test(x, y, exact = FALSE)  # exact=FALSE 处理 ties 时更快
+  data.frame(
+    group1 = pair[1],
+    group2 = pair[2],
+    p.value = test$p.value,
+    statistic = test$statistic,
+    stringsAsFactors = FALSE
+  )
+}, simplify = FALSE)
+
+pairwise_table <- do.call(rbind, pairwise_p)
+
+write.csv(pairwise_table, "Serum_DE_results_boxplot_value_wilcox_pairwise_results.csv", row.names = FALSE)
+
+
+```
+
+
+## 12. Collections of TOP and TOP-like mRNAs
+```{r}
+s94_TOP_and_TOPlike <- read.table("./SourceData/94_TOP_and_TOP_like_mRNAs.txt")
+s90_PRTE <- read.table("./SourceData/90_PRTE_mRNAs.txt")
+
+uniongene <- union(s94_TOP_and_TOPlike$V1,s90_PRTE$V1)
+
+library(VennDiagram)
+
+## 2D
+venn.diagram(list(`94TOPAndTOPlike`=s94_TOP_and_TOPlike$V1,`90PRTE`=s90_PRTE$V1),
+             filename = "x1_x2.tiff",
+             fill=c("red","blue"),
+             alpha=c(0.5,0.5),
+             cat.cex=1.5,
+             cex=1.5,
+             cat.dist=c(0.1,0.1),
+             cat.pos=c(-20,20),
+             cat.fontfamily = "serif",
+             cat.fontface = "bold")
+```
+
+## 12. Translation level of TOP mRNAs
+```{r}
+top_mRNAs_143 <- read.table("./SourceData/143_top_top_like_genes.txt",header = T)
+gene_data["gene_name"] <- longest_trans_info[match(gene_data$gene_id,longest_trans_info$gene_id),5]
+gene_data["trans_id"] <- longest_trans_info[match(gene_data$gene_id,longest_trans_info$gene_id),2]
+gene_data <- select(gene_data,gene_id,gene_name,trans_id,everything())
+
+trans_data["gene_name"] <- longest_trans_info[match(trans_data$gene_id,longest_trans_info$gene_id),5]
+trans_data <- select(trans_data,gene_id,gene_name,transcript_id,everything())
+
+top_mRNAs_143_gene_level_log2FC <- na.omit(gene_data[match(top_mRNAs_143$gene_name,gene_data$gene_name),])
+top_mRNAs_143_trans_level_log2FC <- na.omit(trans_data[match(top_mRNAs_143$gene_name,trans_data$gene_name),])
+
+
+## correlation map
+cor.matrix2 <- cor(top_mRNAs_143_gene_level_log2FC[,4:ncol(top_mRNAs_143_gene_level_log2FC)],top_mRNAs_143_trans_level_log2FC[,4:ncol(top_mRNAs_143_trans_level_log2FC)])
+library(gplots)
+library(RColorBrewer)
+library(circlize)
+library(ComplexHeatmap)
+library(ggpubr)
+library(ggplotify)
+library(eoffice)
+
+log2FC_sample_info <- log2FC_sample_info[match(colnames(cor.matrix2),log2FC_sample_info$SampleID),]
+left_annotation <- rowAnnotation(df=data.frame(CellLine=log2FC_sample_info$BreastCancers,Condition=log2FC_sample_info$Condition,Class=log2FC_sample_info$Class),show_legend = T,show_annotation_name = F)#annotation_legend_param = list(title="Type",legend_direction="vertical"))
+
+z2<-Heatmap(
+  as.matrix(cor.matrix2),
+  col = colorRamp2(c(-1,0,1), 
+                   rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+  cluster_rows = T,
+  cluster_columns = T,
+  clustering_distance_columns = 'euclidean',
+  clustering_method_columns ="ward.D2",
+  clustering_distance_rows = 'euclidean',
+  clustering_method_rows ="ward.D2",
+  row_names_gp = gpar(fontsize=8),
+  column_names_gp = gpar(fontsize=8),
+  heatmap_legend_param = list(title="Pearson\nCorrelation",legend_direction="vertical"))#left_annotation = left_annotation)
+z2.t <- as.ggplot(z2)
+print(z2.t)
+# ggsave('TOP_mRNAs_Correlation_of_log2FC_gene_and_trans_level_clustered.pdf',plot=z2.t,width=11,height=10)
+# ggsave('TOP_mRNAs_Correlation_of_log2FC_gene_and_trans_level_clustered.png',plot=z2.t,width=11,height=10)
+
+
+## heatmap for TOP mRNAs
+AA_starvation_data <- top_mRNAs_143_gene_level_log2FC[,c("gene_name",log2FC_sample_info[log2FC_sample_info$Class%in%c("AA starvation","mTORC1 inhibitor","Serum starvation"),"SampleID"])]
+rownames(AA_starvation_data) <- AA_starvation_data$gene_name
+AA_starvation_data[AA_starvation_data==0] <- NA
+AA_starvation_data <- na.omit(AA_starvation_data)
+# write.table(AA_starvation_data,"TOP_mRNAs_log2FC_gene_level.txt",sep = "\t",quote = F,col.names = T,row.names = F)
+
+top_annotation <- HeatmapAnnotation(df=data.frame(BreastCancers=log2FC_sample_info[log2FC_sample_info$Class%in%c("AA starvation","mTORC1 inhibitor","Serum starvation"),]$BreastCancers),show_legend = T,show_annotation_name = F)#annotation_legend_param = list(title="Type",legend_direction="vertical"))
+
+
+AA_starvation_data <- top_mRNAs_143_trans_level_log2FC[,c("gene_name",log2FC_sample_info[log2FC_sample_info$Class%in%c("AA starvation","mTORC1 inhibitor","Serum starvation"),"SampleID"])]
+rownames(AA_starvation_data) <- AA_starvation_data$gene_name
+AA_starvation_data[AA_starvation_data==0] <- NA
+AA_starvation_data <- na.omit(AA_starvation_data)
+
+write.table(AA_starvation_data,"TOP_mRNAs_log2FC_trans_level.txt",sep = "\t",quote = F,col.names = T,row.names = F)
+
+AA_starvation_samples_info <- log2FC_sample_info[match(colnames(AA_starvation_data[,-1]),log2FC_sample_info$SampleID),]
+top_annotation <- HeatmapAnnotation(df=data.frame(SampleType=AA_starvation_samples_info$Class,
+                                               CellLine=AA_starvation_samples_info$Cell_line,
+                                               BreastCancers=AA_starvation_samples_info$BreastCancers),
+                                 show_legend = T,show_annotation_name = T,
+                                 annotation_legend_param = list(SampleType=list(title="SampleType",legend_direction="vertical"),
+                                                                CellLine=list(title="CellLine"),
+                                                                BreastCancers=list(title="BreastCancers")),
+                                 col=list(BreastCancers=c("N"="grey80","Y"="black"),
+                                          SampleType=c("mTORC1 inhibitor"="#E64B35FF",
+                                                       "Myc"="#4DBBD5FF","AA starvation"="#00A087FF",
+                                                       "Serum starvation"="#3C5488FF","MNK inhibitor"="#F39B7FFF","ER stress"="#8491B4FF")))
+
+z3<-Heatmap(
+  as.matrix(AA_starvation_data[,-1]),
+  col = colorRamp2(c(-1,0,1),
+                   rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+  cluster_rows = T,
+  cluster_columns = T,
+  clustering_distance_columns = 'euclidean',
+  clustering_method_columns ="ward.D2",
+  clustering_distance_rows = 'euclidean',
+  clustering_method_rows ="ward.D2",
+  row_names_gp = gpar(fontsize=4),
+  column_names_gp = gpar(fontsize=8),
+  heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),top_annotation =top_annotation)
+z3.t <- as.ggplot(z3)
+print(z3.t)
+ggsave('TOP_mRNAs_log2FC_trans_level_clustered.pdf',plot=z3.t,width=11,height=10)
+ggsave('TOP_mRNAs_log2FC_trans_level_clustered.png',plot=z3.t,width=11,height=10)
+
+## boxplot for TOP MRNAs
+library(reshape2)
+AA_starvation_data.median <- apply(AA_starvation_data[,-1],2,median)
+AA_starvation_data.median.sort <- as.data.frame(sort(AA_starvation_data.median,decreasing = T))
+colnames(AA_starvation_data.median.sort) <- "log2FC"
+AA_starvation_data.sort <- AA_starvation_data[,c("gene_name",rownames(AA_starvation_data.median.sort))]
+AA_starvation_data.melt <- melt(AA_starvation_data.sort[,-1])
+AA_starvation_data.melt["BreastCancers"] <- log2FC_sample_info[match(AA_starvation_data.melt$variable,log2FC_sample_info$SampleID),6]
+
+bx.p <- ggplot(data=AA_starvation_data.melt,aes(x=variable,y=value,fill=BreastCancers))+geom_boxplot()+theme_bw()+
+  labs(x="Samples",y="log2FC(RPKM)",title="Targets of mTORC1")+
+  theme(plot.title = element_text(hjust=0.5),axis.text.x = element_blank(),axis.text = element_text(size=12),axis.title = element_text(size=15))+
+  #geom_hline(yintercept = 1,color="red",linetype="dashed")+geom_hline(yintercept = -1,color="red",linetype="dashed")+
+  geom_hline(yintercept = 0,color="blue",linetype="dashed",linewidth=1.2)
+ggsave('TOP_mRNAs_log2FC_trans_level_clustered_boxplot.pdf',plot=bx.p,width=16,height=6)
+ggsave('TOP_mRNAs_log2FC_trans_level_clustered_boxplot.png',plot=bx.p,width=16,height=6)
+# topptx(bx.p,"TOP_mRNAs_log2FC_trans_level_clustered_boxplot.pptx",width = 16,height = 6)
+write.table(AA_starvation_data.median.sort,"TOP_mRNAs_log2FC_trans_level_clustered_boxplot.txt",quote = F,sep = "\t",row.names = T,col.names = T)
+
+
+```
+
+
+## 13. UMAP of log2FC for TOP mRNAs
+```{r}
+AA_starvation_data <- top_mRNAs_143_trans_level_log2FC[,c("gene_name",log2FC_sample_info[log2FC_sample_info$Class%in%c("AA starvation","mTORC1 inhibitor","Serum starvation"),"SampleID"])]
+rownames(AA_starvation_data) <- AA_starvation_data$gene_name
+# AA_starvation_data[AA_starvation_data==0] <- NA
+# AA_starvation_data <- na.omit(AA_starvation_data)
+AA_starvation_samples_info <- log2FC_sample_info[match(colnames(AA_starvation_data[,-1]),log2FC_sample_info$SampleID),c("SampleID","BreastCancers")]
+
+library(umap)
+plot.umap=function(data,group){
+  colnames(group)=c("ID","Groups")
+  ID=unique(as.vector(group$ID))
+  subdata=subset(data,select=ID)
+  # subdata=log2(subdata)
+  subdata=t(na.omit(subdata))
+  data.umap = umap(subdata)
+  umap=as.data.frame(data.umap$layout)
+  umap$ID=rownames(umap)
+  umap=merge(umap,group,by="ID")
+  xlabel="UMAP_1"
+  ylabel="UMAP_2"
+  
+  p <- ggscatter(umap,x="V1",y="V2",color="Groups",
+                 ellipse=T,ellipse.type='norm',show.legend.text=F, size=3, 
+                 font.label=c(8,"plain","black")) + 
+    theme_bw() + 
+    xlab(xlabel)+ylab(ylabel)+
+    guides(color=guide_legend(title="Breast Cancers"), fill=F) + 
+    theme(axis.text=element_text(size=12,color='black'),
+          axis.title=element_text(size=12,color='black'),
+          legend.title=element_text(size=12,color='black'),
+          legend.text=element_text(size=12,color='black'))
+  return(p)
+}
+
+plot.data <- AA_starvation_data
+plot.data[plot.data==0] <-NA
+trans_level_RPKM_log2FC.umap <- plot.umap(plot.data[,-1],AA_starvation_samples_info)
+print(trans_level_RPKM_log2FC.umap)
+ggsave('TOP_mRNA_trans_level_RPKM_log2FC.umap.pdf',plot=trans_level_RPKM_log2FC.umap,width=8.5,height=7.5)
+ggsave('TOP_mRNA_trans_level_RPKM_log2FC.umap.png',plot=trans_level_RPKM_log2FC.umap,width=8.5,height=7.5)
+# topptx(trans_level_RPKM_log2FC.umap,"TOP_mRNA_trans_level_RPKM_log2FC.umap.pptx",width=8.5,height=7.5)
+
+
+```
+
+## 14. Correlation between log2FC of RPF and protein for TOP and TOP-like mRNAs
+```{r}
+GSE139910_protein <- read.table("./SourceData/GSE139910_protein_abundance.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t")
+GSE139910_protein_topmRNA <- na.omit(GSE139910_protein[match(top_mRNAs_143$gene_name,GSE139910_protein$gene_name),])
+GSE139910_protein_topmRNA["log2RPKM(RPF)"] <- top_mRNAs_143_gene_level_log2FC[match(GSE139910_protein_topmRNA$gene_name,top_mRNAs_143_gene_level_log2FC$gene_name),"PATU-8902-SerAndGly-24h(GSE139910)"]
+
+
+GSE139910_topmRNA <- GSE139910_protein_topmRNA
+colnames(GSE139910_topmRNA) <- c("Gene_name","log2Protein(24h)","log2Protein(48h)","Z-score","log2RPF(24h)")
+
+library(ggplot2)
+library(ggrepel)
+
+
+g <- ggplot(data=GSE139910_topmRNA,aes(x=`log2Protein(24h)`,y=`log2RPF(24h)`))+geom_point(size=4,alpha=0.7)+
+  labs(xlab="log2Protein(24h)",ylab="log2PRF(24h)")+xlim(-1,0.5)+ylim(-1.5,3)+
+  geom_smooth(data=GSE139910_topmRNA,mapping = aes(x=`log2Protein(24h)`,y=`log2RPF(24h)`),method = "lm")+#geom_abline(intercept = 0, slope = 1,color="red", linetype="dashed", size=1)+
+  
+  theme_bw()+annotate("text", x = -0.7 , y = 2.5,label = "Spearman's correlation: 0.476\np-value: 7.528e-08",colour="black")
+
+print(g)
+
+cor.test(GSE139910_topmRNA$`log2Protein(24h)`,GSE139910_topmRNA$`log2RPF(24h)`,method = "spearman")
+
+ggsave('GSE139910_protein_vs_RPF_scatterPlot.pdf',plot=g,width=6,height=6)
+ggsave('GSE139910_protein_vs_RPF_scatterPlot.png',plot=g,width=6,height=6)
+# topptx(g,"GSE139910_protein_vs_RPF_scatterPlot.pptx",width=6,height=6)
+
+```
+## 15. targets of GCN2-eIF2α pathway
+```{r}
+ATF4_CHOP_targets <- read.table("./SourceData/ATF4_and_CHOP_targets.txt",header = T,sep = "\t",stringsAsFactors = F,check.names = F)
+ATF4_CHOP_targets["gene_id"] <- longest_trans_info[match(ATF4_CHOP_targets$Symbol,longest_trans_info$gene_name),4]
+ATF4_CHOP_targets_withdata <- ATF4_CHOP_targets[which(ATF4_CHOP_targets$Symbol%in%longest_trans_info$gene_name),]
+ATF4_CHOP_targets_gene_level_log2FC <- gene_level_RPKM_log2FC[match(ATF4_CHOP_targets_withdata$gene_id,gene_level_RPKM_log2FC$gene_id),]
+ATF4_CHOP_targets_trans_level_log2FC <- trans_level_RPKM_log2FC[match(ATF4_CHOP_targets_withdata$gene_id,trans_level_RPKM_log2FC$gene_id),]
+ERStress_samples <- log2FC_sample_info[which(log2FC_sample_info$Class%in%c("AA starvation","ER stress")),] # "mTORC1 inhibitor"
+
+ATF4_ATF5_CHOP_GADD34_gene_log2FC <- gene_level_RPKM_log2FC[which(gene_level_RPKM_log2FC$gene_id%in%c("ENSG00000128272","ENSG00000169136","ENSG00000175197","ENSG00000087074")),c("gene_id",ERStress_samples$SampleID)]
+rownames(ATF4_ATF5_CHOP_GADD34_gene_log2FC) <- c("GADD34","ATF4","ATF5","CHOP")
+top_annotation <- HeatmapAnnotation(df=data.frame(BreastCancers=ERStress_samples[ERStress_samples$Class%in%c("AA starvation","ER stress"),]$BreastCancers),col=list(BreastCancers=c(Y="red",N="blue")),show_legend = T,show_annotation_name = F)#annotation_legend_param =  list(title="Type",legend_direction="vertical"))
+
+z2<-Heatmap(
+  as.matrix(ATF4_ATF5_CHOP_GADD34_gene_log2FC[,-1]),
+  col = colorRamp2(c(-1,0,1), 
+                   rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+  cluster_rows = T,
+  cluster_columns = T,
+  clustering_distance_columns = 'euclidean',
+  clustering_method_columns ="ward.D2",
+  clustering_distance_rows = 'euclidean',
+  clustering_method_rows ="ward.D2",
+  rect_gp = gpar(col="white"),
+  row_names_gp = gpar(fontsize=8),
+  column_names_gp = gpar(fontsize=8),
+  heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),top_annotation = top_annotation)
+z2.t <- as.ggplot(z2)
+print(z2.t)
+ggsave('ATF4_CHOP_log2FC_gene_level_clustered.pdf',plot=z2.t,width=10,height=4)
+ggsave('ATF4_CHOP_log2FC_gene_level_clustered.png',plot=z2.t,width=10,height=4)
+
+
+
+ATF4_CHOP_targets_trans_level_log2FC_ERstress <- ATF4_CHOP_targets_trans_level_log2FC[,c("gene_id",ERStress_samples$SampleID)]
+ATF4_CHOP_targets_trans_level_log2FC_ERstress[ATF4_CHOP_targets_trans_level_log2FC_ERstress==0] <- NA
+ATF4_CHOP_targets_trans_level_log2FC_ERstress <- na.omit(ATF4_CHOP_targets_trans_level_log2FC_ERstress)
+ATF4_CHOP_targets_withdata_lefted <- ATF4_CHOP_targets_withdata[match(ATF4_CHOP_targets_trans_level_log2FC_ERstress$gene_id,ATF4_CHOP_targets_withdata$gene_id),]
+
+left_annotation <- rowAnnotation(df=data.frame(Type=ATF4_CHOP_targets_withdata_lefted$Overlap),col=list(Type=c(ATF4_Only="red",Common="gray",CHOP_Only="blue")),show_legend = T,show_annotation_name = F)#annotation_legend_param = list(title="Type",legend_direction="vertical"))
+rownames(ATF4_CHOP_targets_trans_level_log2FC_ERstress) <- ATF4_CHOP_targets_trans_level_log2FC_ERstress$gene_id
+
+
+z4<-Heatmap(
+  as.matrix(ATF4_CHOP_targets_trans_level_log2FC_ERstress[,-1]),
+  col = colorRamp2(c(-1,0,1), 
+                   rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+  cluster_rows = T,
+  cluster_columns = T,
+  clustering_distance_columns = 'euclidean',
+  clustering_method_columns ="ward.D2",
+  clustering_distance_rows = 'euclidean',
+  clustering_method_rows ="ward.D2",
+  row_names_gp = gpar(fontsize=1),
+  column_names_gp = gpar(fontsize=8),
+  heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),left_annotation = left_annotation)
+z4.t <- as.ggplot(z4)
+print(z4.t)
+ggsave('ATF4_CHOP_targets_log2FC_trans_level_clustered.pdf',plot=z4.t,width=11,height=10)
+ggsave('ATF4_CHOP_targets_log2FC_trans_level_clustered.png',plot=z4.t,width=11,height=10)
+```
+## 16. Ribosome stalling at A-site position for all amino acid starvation datasets
+```{r}
+all_codon_level_log2FC_Asite <- read.table("./SourceData/all_codon_level_log2FC_Asite.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t")
+
+all_AA_level_log2FC_Asite <- read.table("./SourceData/all_AA_level_log2FC_Asite.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t")
+
+log2FC_samples_info <- read.table("./SourceData/all_sample_treatment_conditions_log2FC.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+
+AA_starvation_log2FC_sample_info <- log2FC_samples_info[which(log2FC_samples_info$Class%in%c("AA starvation","mTORC1 inhibitor","Serum starvation")),]
+AA_starvation_codon_level_log2FC_Asite <- all_codon_level_log2FC_Asite[,c("AA","codon",AA_starvation_log2FC_sample_info$SampleID)]
+rownames(AA_starvation_codon_level_log2FC_Asite) <- paste0(AA_starvation_codon_level_log2FC_Asite$codon,"(",AA_starvation_codon_level_log2FC_Asite$AA,")")
+
+library(gplots)
+library(RColorBrewer)
+library(circlize)
+library(ComplexHeatmap)
+library(ggpubr)
+library(ggplotify)
+library(eoffice)
+top_annotation <- HeatmapAnnotation(df=data.frame(SampleType=AA_starvation_log2FC_sample_info$Class,
+                                               CellLine=AA_starvation_log2FC_sample_info$Cell_line,
+                                               BreastCancers=AA_starvation_log2FC_sample_info$BreastCancers),
+                                 show_legend = T,show_annotation_name = T,
+                                 annotation_legend_param = list(SampleType=list(title="SampleType",legend_direction="vertical"),
+                                                                CellLine=list(title="CellLine"),
+                                                                BreastCancers=list(title="BreastCancers")),
+                                 col=list(BreastCancers=c("N"="grey80","Y"="black"),
+                                          SampleType=c("mTORC1 inhibitor"="#E64B35FF",
+                                                       "AA starvation"="#4DBBD5FF","Serum starvation"="#00A087FF",
+                                                       "ER stress"="#3C5488FF")))
+AA_annotations <- AA_starvation_codon_level_log2FC_Asite[,c(1,2)]
+AA_annotations[AA_annotations$AA%in%c("A","P","G","V","W","I","F","M","L"),3] <- "Polar"
+AA_annotations[AA_annotations$AA%in%c('T','Y','Q','C','N','S'),3] <- "Non-Polar"
+AA_annotations[AA_annotations$AA%in%c('K','H','R'),3] <- "Positive"
+AA_annotations[AA_annotations$AA%in%c('D','E'),3] <- "Negative"
+
+left_annotation <- rowAnnotation(df=data.frame(AAType=AA_annotations$V3),show_legend=T,show_annotation_name=T,
+                                 #annotation_legend_parm=list(AAType=list(title="AAtype")),
+                                 col=list(AAType=c("Polar"="#8952A0","Non-Polar"="#959897","Positive"="#AD002AFF","Negative"="#00468BFF")))
+
+AA_starvation_codon_level_log2FC_Asite.sorted <- AA_starvation_codon_level_log2FC_Asite[,AA_starvation_log2FC_sample_info$SampleID]
+AA_h1<-Heatmap(
+  as.matrix(AA_starvation_codon_level_log2FC_Asite.sorted),
+  col = colorRamp2(c(-1,0,1), 
+                   rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+  cluster_rows = T,
+  cluster_columns = T,
+  clustering_distance_columns = 'euclidean',
+  clustering_method_columns ="ward.D2",
+  clustering_distance_rows = 'euclidean',
+  clustering_method_rows ="ward.D2",
+  row_names_gp = gpar(fontsize=8),
+  column_names_gp = gpar(fontsize=8),
+  #column_title = "A-site",row_title = "P-site",
+  heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),top_annotation = top_annotation,right_annotation=left_annotation,show_row_names = T,show_column_names = T)
+AA_h1.t <- as.ggplot(AA_h1)
+print(AA_h1.t)
+ggsave('AA_starvation_Hierachical_clustering_of_AA_starvation_codon_log2FC_Asite.pdf',plot=AA_h1.t,width=12,height=12.5)
+ggsave('AA_starvation_Hierachical_clustering_of_AA_starvation_codon_log2FC_Asite.png',plot=AA_h1.t,width=12,height=12.5)
+
+
+```
+
+## 17. delta polarity
+```{r}
+AllDiffPolarity <- read.table("./SourceData/all_sample_diff_polarity.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t")
+rownames(AllDiffPolarity) <- AllDiffPolarity$transcript_id
+AllDiffPolarity <- AllDiffPolarity[,-1]
+SampleInfo <- read.table("./SourceData/all_sample_info.txt",header = T,sep="\t",fill=T)
+RPKMMean <- read.table("./SourceData/all_sample_trans_level_CDS_RPKM_mean.txt",header = T,sep = "\t")
+
+
+## summary of each transcripts
+RowMean <- apply(AllDiffPolarity,1,mean)
+summary(RowMean)
+
+AllDiffPolarity <- AllDiffPolarity[rowMeans(AllDiffPolarity)!=0,]
+summary(rowMeans(AllDiffPolarity))
+
+## heatmap of the diff polarity
+library(gplots)
+library(RColorBrewer)
+library(circlize)
+library(ComplexHeatmap)
+library(ggpubr)
+library(ggplotify)
+library(eoffice)
+
+
+z1<-Heatmap(
+    as.matrix(AllDiffPolarity),
+    col = colorRamp2(c(-0.5,0,0.5), 
+                     rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+    cluster_rows = T,
+    cluster_columns = T,
+    clustering_distance_columns = 'euclidean',
+    clustering_method_columns ="ward.D2",
+    clustering_distance_rows = 'euclidean',
+    clustering_method_rows ="ward.D2",
+    row_names_gp = gpar(fontsize=5),
+    column_names_gp = gpar(fontsize=5),
+    column_title = "sample",row_title = "gene",
+    show_row_names = F,show_column_names = T,
+    heatmap_legend_param = list(title="z-score",legend_direction="vertical"))
+z1.t <- as.ggplot(z1)
+ggsave(paste0("allPolarity_heatmap",".pdf"),plot=z1.t,width=8.5,height=7.5)
+ggsave(paste0("allPolarity_heatmap",".png"),plot=z1.t,width=8.5,height=7.5)
+
+## filter
+RPKMMean.filter <- RPKMMean[rowMeans(RPKMMean[,-1])>=1,]
+AllDiffPolarity.filter <- AllDiffPolarity[RPKMMean.filter$trans_id,]
+
+library(gplots)
+library(RColorBrewer)
+library(circlize)
+library(ComplexHeatmap)
+library(ggpubr)
+library(ggplotify)
+library(eoffice)
+
+
+
+
+  z1<-Heatmap(
+    as.matrix(AllDiffPolarity.filter),
+    col = colorRamp2(c(-0.5,0,0.5), 
+                     rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+    cluster_rows = T,
+    cluster_columns = T,
+    clustering_distance_columns = 'euclidean',
+    clustering_method_columns ="ward.D2",
+    clustering_distance_rows = 'euclidean',
+    clustering_method_rows ="ward.D2",
+    row_names_gp = gpar(fontsize=5),
+    column_names_gp = gpar(fontsize=8),
+    column_title = "sample",row_title = "gene",
+    show_row_names = F,show_column_names = T,
+    heatmap_legend_param = list(title="Diff polarity",legend_direction="vertical"))
+  z1_ordered <- AllDiffPolarity.filter[unlist(row_order(z1)),column_order(z1)]
+  
+  z1.t <- as.ggplot(z1)
+  ggsave(paste0("allPolarity_filter_heatmap",".pdf"),plot=z1.t,width=10.5,height=7.5)
+  ggsave(paste0("allPolarity_filter_heatmap",".png"),plot=z1.t,width=10.5,height=7.5)
+  write.table(z1_ordered,"allPolarity_filter_heatmap_ordered.txt",quote = F,sep = "\t",row.names = T,col.names = T)
+  
+  ## boxplot---mean
+  AllDiffPolarity.filter.mean <- apply(AllDiffPolarity.filter,2,mean)
+  AllDiffPolarity.filter.mean <- as.data.frame(AllDiffPolarity.filter.mean)
+  colnames(AllDiffPolarity.filter.mean) <- "polarity"
+  AllDiffPolarity.filter.mean$Condition <- rownames(AllDiffPolarity.filter.mean)
+  AllDiffPolarity.filter.mean <- AllDiffPolarity.filter.mean[order(AllDiffPolarity.filter.mean$polarity),]
+  
+library(ggplot2)
+library(ggpubr)
+  
+AllDiffPolarity.filter.mean$Condition <- factor(AllDiffPolarity.filter.mean$Condition,levels = unique(AllDiffPolarity.filter.mean$Condition))
+AllDiffPolarity.filter.mean$Cells <- SampleInfo[match(AllDiffPolarity.filter.mean$Condition,SampleInfo$TranscriptID),4]
+AllDiffPolarity.filter.mean$BreastCancers <- "N"
+AllDiffPolarity.filter.mean[which(AllDiffPolarity.filter.mean$Cells%in%c("Hs578t","MCF7","MDA-MB-231","MDAMB231","SUM159PT","T47D","ZR75-1")),4] <- "Y"
+AllDiffPolarity.filter.mean$BreastCancers <- factor(AllDiffPolarity.filter.mean$BreastCancers,levels = c("Y","N"))
+p <- ggplot(data = AllDiffPolarity.filter.mean, aes(x = Condition, y = polarity, fill = BreastCancers)) +
+  geom_bar(stat = "identity", color = "black", size = 0.5, position = position_dodge(0.7)) + labs(x="Condition",y="Diff(Polarity)") + scale_fill_manual(values = c("Y" = "#ee6169", "N" = "#5e9bd3"))+
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 50, vjust = 1, hjust=1),  # Codon 旋转 90 度（180 会倒着看）
+    legend.position = "top"  # 如果你不想显示图例
+  )+ylim(-0.2,0.2)
+
+ggsave("allPolarity_filter_mean_barplot.pdf",p,height=6.5,width=12.5)
+ggsave("allPolarity_filter_mean_barplot.png",p,height=6.5,width=12.5)
+
+p <- ggplot(data = AllDiffPolarity.filter.mean, aes(x = Condition, y = polarity)) +
+  geom_bar(stat = "identity", color = "black",fill="#5e9bd3", size = 0.5, position = position_dodge(0.7)) + labs(x="Condition",y="Diff(Polarity)") +#scale_fill_manual(values =  "#5e9bd3")+
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 50, vjust = 1, hjust=1),  # Codon 旋转 90 度（180 会倒着看）
+    legend.position = "top"  # 如果你不想显示图例
+  )+ylim(-0.2,0.2)
+
+ggsave("allPolarity_filter_mean_barplot_noColor.pdf",p,height=6.5,width=12.5)
+ggsave("allPolarity_filter_mean_barplot_noColor.pdf",p,height=6.5,width=12.5)
+
+AllDiffPolarity.filter.mean$Condition <- factor(AllDiffPolarity.filter.mean$Condition,levels = colnames(z1_ordered))
+p <- ggplot(data = AllDiffPolarity.filter.mean, aes(x = Condition, y = polarity, fill = BreastCancers)) +
+  geom_bar(stat = "identity", color = "black", size = 0.5, position = position_dodge(0.7)) + labs(x="Condition",y="Diff(Polarity)") + scale_fill_manual(values = c("Y" = "#ee6169", "N" = "#5e9bd3"))+
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 50, vjust = 1, hjust=1),  # Codon 旋转 90 度（180 会倒着看）
+    legend.position = "top"  # 如果你不想显示图例
+  )+ylim(-0.2,0.2)
+
+ggsave("allPolarity_filter_mean_barplot_ordered.pdf",p,height=6.5,width=12.5)
+ggsave("allPolarity_filter_mean_barplot_ordered.png",p,height=6.5,width=12.5)
+
+
+p <- ggplot(data = AllDiffPolarity.filter.mean, aes(x = Condition, y = polarity)) +
+  geom_bar(stat = "identity", color = "black", fill="#5e9bd3",size = 0.5, position = position_dodge(0.7)) + labs(x="Condition",y="Diff(Polarity)") +# scale_fill_manual(values = c("Y" = "#ee6169", "N" = "#5e9bd3"))+
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 50, vjust = 1, hjust=1),  # Codon 旋转 90 度（180 会倒着看）
+    legend.position = "top"  # 如果你不想显示图例
+  )+ylim(-0.2,0.2)
+
+ggsave("allPolarity_filter_mean_barplot_ordered_noColor.pdf",p,height=6.5,width=12.5)
+ggsave("allPolarity_filter_mean_barplot_ordered_noColor.png",p,height=6.5,width=12.5)
+
+
+  ## boxplot-median
+  AllDiffPolarity.filter.median <- apply(AllDiffPolarity.filter,2,median)
+  AllDiffPolarity.filter.median <- as.data.frame(AllDiffPolarity.filter.median)
+  colnames(AllDiffPolarity.filter.median) <- "polarity"
+  AllDiffPolarity.filter.median$Condition <- rownames(AllDiffPolarity.filter.median)
+  AllDiffPolarity.filter.median <- AllDiffPolarity.filter.median[order(AllDiffPolarity.filter.median$polarity),]
+  
+library(ggplot2)
+library(ggpubr)
+  
+AllDiffPolarity.filter.median$Condition <- factor(AllDiffPolarity.filter.median$Condition,levels = unique(AllDiffPolarity.filter.median$Condition))
+AllDiffPolarity.filter.median$Cells <- SampleInfo[match(AllDiffPolarity.filter.median$Condition,SampleInfo$TranscriptID),4]
+AllDiffPolarity.filter.median$BreastCancers <- "N"
+AllDiffPolarity.filter.median[which(AllDiffPolarity.filter.median$Cells%in%c("Hs578t","MCF7","MDA-MB-231","MDAMB231","SUM159PT","T47D","ZR75-1")),4] <- "Y"
+AllDiffPolarity.filter.median$BreastCancers <- factor(AllDiffPolarity.filter.median$BreastCancers,levels = c("Y","N"))
+p <- ggplot(data = AllDiffPolarity.filter.median, aes(x = Condition, y = polarity, fill = BreastCancers)) +
+  geom_bar(stat = "identity", color = "black", size = 0.5, position = position_dodge(0.7)) + labs(x="Condition",y="Diff(Polarity)") + scale_fill_manual(values = c("Y" = "#ee6169", "N" = "#5e9bd3"))+
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 50, vjust = 1, hjust=1),  # Codon 旋转 90 度（180 会倒着看）
+    legend.position = "top"  # 如果你不想显示图例
+  )+ylim(-0.2,0.2)
+
+ggsave("allPolarity_filter_median_barplot.pdf",p,height=6.5,width=12.5)
+ggsave("allPolarity_filter_median_barplot.png",p,height=6.5,width=12.5)
+
+
+p <- ggplot(data = AllDiffPolarity.filter.median, aes(x = Condition, y = polarity)) +
+  geom_bar(stat = "identity", color = "black",fill="#5e9bd3", size = 0.5, position = position_dodge(0.7)) + labs(x="Condition",y="Diff(Polarity)") +# scale_fill_manual(values = c("Y" = "#ee6169", "N" = "#5e9bd3"))+
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 50, vjust = 1, hjust=1),  # Codon 旋转 90 度（180 会倒着看）
+    legend.position = "top"  # 如果你不想显示图例
+  )+ylim(-0.2,0.2)
+
+ggsave("allPolarity_filter_median_barplot_noColor.pdf",p,height=6.5,width=12.5)
+ggsave("allPolarity_filter_median_barplot_noColor.png",p,height=6.5,width=12.5)
+
+
+AllDiffPolarity.filter.median$Condition <- factor(AllDiffPolarity.filter.median$Condition,levels = colnames(z1_ordered))
+p <- ggplot(data = AllDiffPolarity.filter.median, aes(x = Condition, y = polarity, fill = BreastCancers)) +
+  geom_bar(stat = "identity", color = "black", size = 0.5, position = position_dodge(0.7)) + labs(x="Condition",y="Diff(Polarity)") + scale_fill_manual(values = c("Y" = "#ee6169", "N" = "#5e9bd3"))+
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 50, vjust = 1, hjust=1),  # Codon 旋转 90 度（180 会倒着看）
+    legend.position = "top"  # 如果你不想显示图例
+  )+ylim(-0.2,0.2)
+
+ggsave("allPolarity_filter_median_barplot_ordered.pdf",p,height=6.5,width=12.5)
+ggsave("allPolarity_filter_median_barplot_ordered.png",p,height=6.5,width=12.5)
+
+
+p <- ggplot(data = AllDiffPolarity.filter.median, aes(x = Condition, y = polarity)) +
+  geom_bar(stat = "identity", color = "black",fill="#5e9bd3", size = 0.5, position = position_dodge(0.7)) + labs(x="Condition",y="Diff(Polarity)") +#scale_fill_manual(values =  "#5e9bd3")+
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 50, vjust = 1, hjust=1),  # Codon 旋转 90 度（180 会倒着看）
+    legend.position = "top"  # 如果你不想显示图例
+  )+ylim(-0.2,0.2)
+ggsave("allPolarity_filter_median_barplot_ordered_noColor.pdf",p,height=6.5,width=12.5)
+ggsave("allPolarity_filter_median_barplot_ordered_noColor.png",p,height=6.5,width=12.5)
+
+
+
+```
+
+## 18. SLC7A11
+```{r}
+all_sample_trans_level_log2FC <- read.table("./SourceData/all_sample_trans_level_CDS_RPKM_log2FC.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t")
+log2FC_samples_info <- read.table("./SourceData/all_sample_treatment_conditions_log2FC.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t")
+AA_starvation_log2FC_sample_info <- log2FC_samples_info[which(log2FC_samples_info$Class%in%c("AA starvation","mTORC1 inhibitor","Serum starvation")),]
+trans_info <- read.table("./SourceData/longest.transcripts.info.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+  
+  
+all_sample_trans_level_log2FC.cpoly <- all_sample_trans_level_log2FC
+all_sample_trans_level_log2FC.cpoly["GeneName"] <- trans_info[match(all_sample_trans_level_log2FC.cpoly$transcript_id,trans_info$trans_id),5]
+
+SLC7A11 <- all_sample_trans_level_log2FC.cpoly[which(all_sample_trans_level_log2FC.cpoly$GeneName=="SLC7A11"),]
+
+
+library(dplyr)
+library(reshape2)
+library(ggpubr)
+library(cowplot)
+library(ggsci)
+
+
+SLC7A11.melt <- melt(SLC7A11)
+SLC7A11.melt["Class"] <- AA_starvation_log2FC_sample_info[match(SLC7A11.melt$variable,AA_starvation_log2FC_sample_info$SampleID),3]
+SLC7A11.melt["BreastCancers"] <- AA_starvation_log2FC_sample_info[match(SLC7A11.melt$variable,AA_starvation_log2FC_sample_info$SampleID),6]
+
+SLC7A11.melt.filter <- SLC7A11.melt[which(SLC7A11.melt$Class%in%c("mTORC1 inhibitor","AA starvation","Serum starvation")),]
+SLC7A11.melt.filter["NewClass"] <- "None"
+SLC7A11.melt.filter[SLC7A11.melt.filter$Class=="mTORC1 inhibitor",7] <- "mTORC1 inhibitor"
+SLC7A11.melt.filter[which(SLC7A11.melt.filter$Class=="AA starvation"&SLC7A11.melt.filter$BreastCancers=="Y"),7] <- "BreastCancers:AA"
+SLC7A11.melt.filter[which(SLC7A11.melt.filter$Class=="AA starvation"&SLC7A11.melt.filter$BreastCancers=="N"),7] <- "NonBreastCancers:AA"
+
+SLC7A11.melt.filter[which(SLC7A11.melt.filter$Class=="Serum starvation"&SLC7A11.melt.filter$BreastCancers=="Y"),7] <- "BreastCancers:Serum"
+SLC7A11.melt.filter[which(SLC7A11.melt.filter$Class=="Serum starvation"&SLC7A11.melt.filter$BreastCancers=="N"),7] <- "NonBreastCancers:Serum"
+
+
+
+SLC7A11.melt.filter$NewClass <- factor(SLC7A11.melt.filter$NewClass,levels = c("mTORC1 inhibitor","BreastCancers:AA","NonBreastCancers:AA","BreastCancers:Serum","NonBreastCancers:Serum"))
+
+myclor <- pal_d3("category20",alpha = 0.5)(3)
+
+pp1 = ggplot(SLC7A11.melt.filter,aes(x=NewClass,y=value,fill=NewClass)) + #ggplot作图
+  geom_boxplot()+stat_boxplot(geom="errorbar",lwd=0.5,width=0.2)+geom_jitter(shape = 21,aes(fill=NewClass),width = 0.25) +
+    #stat_summary(fun=mean, geom="point", color="grey60") +
+    theme_cowplot() +
+  theme(axis.text = element_text(size = 16),axis.title = element_text(size = 16),legend.text = element_text(size = 16),
+          legend.title = element_text(size = 16),plot.title = element_text(hjust = 0.5,size = 16,face = 'plain'),legend.position = "none") +
+    labs(title = "SLC7A11",y='log2FC')+scale_fill_npg()+coord_flip()
+
+  ###组间t检验分析
+labely = max(SLC7A11.melt.filter$value)
+compare_means(value ~ NewClass,  data = SLC7A11.melt.filter)
+my_comparisons <- list(c("BreastCancers:AA", "mTORC1 inhibitor"),c("BreastCancers:AA","NonBreastCancers:AA"),c("mTORC1 inhibitor","NonBreastCancers:AA"),c("BreastCancers:Serum","NonBreastCancers:Serum"))
+pp1 = pp1 + stat_compare_means(comparisons = my_comparisons,size = 8,method = "wilcox.test")
+
+
+ggsave("SLC7A11_genes_RPF_log2FC_boxplot.pdf",pp1,width = 8.5,height = 6.5)
+ggsave("SLC7A11_genes_RPF_log2FC_boxplot.png",pp1,width = 8.5,height = 6.5)
+```
+
+## 19. autophagy
+```{r}
+all_sample_trans_level_log2FC <- read.table("./SourceData/all_sample_trans_level_CDS_RPKM_log2FC.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t")
+log2FC_samples_info <- read.table("./SourceData/all_sample_treatment_conditions_log2FC.txt",header = T,stringsAsFactors = F,check.names = F,sep = "\t")
+AA_starvation_log2FC_sample_info <- log2FC_samples_info[which(log2FC_samples_info$Class%in%c("AA starvation","mTORC1 inhibitor","Serum starvation")),]
+trans_info <- read.table("./SourceData/longest.transcripts.info.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+
+autophagyC_human <- data.frame(Symbol=c("NBR1","SQSTM1","TAX1BP1","NCOA4","MAP1LC3A","MAP1LC3B","BECN1","LAMP1","LAMP2","ULK1"))
+
+autophagyC_human["transID"] <- trans_info[match(autophagyC_human$Symbol,trans_info$gene_name),2]
+autophagyC_human <- na.omit(autophagyC_human)
+autophagyC_human <- autophagyC_human[!duplicated(autophagyC_human$Symbol),]
+
+all_sample_trans_level_log2FC_autophagy <- all_sample_trans_level_log2FC[match(autophagyC_human$transID,all_sample_trans_level_log2FC$transcript_id),c("transcript_id",AA_starvation_log2FC_sample_info$SampleID)]
+all_sample_trans_level_log2FC_autophagy <- na.omit(all_sample_trans_level_log2FC_autophagy)
+
+all_sample_trans_level_log2FC_autophagy["mean_log2FC"] <- apply(all_sample_trans_level_log2FC_autophagy[,-1],1,mean)
+all_sample_trans_level_log2FC_autophagy["number_log2FC_gt0"] <- apply(all_sample_trans_level_log2FC_autophagy[,-1],1,function(x){sum(x==0)})
+
+all_sample_trans_level_log2FC_autophagy.filter <- all_sample_trans_level_log2FC_autophagy[which(all_sample_trans_level_log2FC_autophagy$number_log2FC_gt0<(59/2)),]
+
+library(gplots)
+library(RColorBrewer)
+library(circlize)
+library(ComplexHeatmap)
+library(ggpubr)
+library(ggplotify)
+library(eoffice)
+top_annotation <- HeatmapAnnotation(df=data.frame(SampleType=AA_starvation_log2FC_sample_info$Class,
+                                               CellLine=AA_starvation_log2FC_sample_info$Cell_line,
+                                               BreastCancers=AA_starvation_log2FC_sample_info$BreastCancers),
+                                 show_legend = T,show_annotation_name = T,
+                                 annotation_legend_param = list(SampleType=list(title="SampleType",legend_direction="vertical"),
+                                                                CellLine=list(title="CellLine"),
+                                                                BreastCancers=list(title="BreastCancers")),
+                                 col=list(BreastCancers=c("N"="grey80","Y"="black"),
+                                          SampleType=c("mTORC1 inhibitor"="#E64B35FF",
+                                                       "Myc"="#4DBBD5FF","AA starvation"="#00A087FF",
+                                                       "Serum starvation"="#3C5488FF","MNK inhibitor"="#F39B7FFF","ER stress"="#8491B4FF")))
+
+
+all_sample_trans_level_log2FC_autophagy.sorted <- all_sample_trans_level_log2FC_autophagy.filter[,AA_starvation_log2FC_sample_info$SampleID]
+rownames(all_sample_trans_level_log2FC_autophagy.sorted) <- all_sample_trans_level_log2FC_autophagy.filter$transcript_id
+rownames(all_sample_trans_level_log2FC_autophagy.sorted) <- autophagyC_human[match(rownames(all_sample_trans_level_log2FC_autophagy.sorted),autophagyC_human$transID),1]
+
+z3<-Heatmap(
+  as.matrix(all_sample_trans_level_log2FC_autophagy.sorted),
+  col = colorRamp2(c(-1,0,1), 
+                   rev(colorRampPalette(brewer.pal(5, "RdBu"))(3))),
+  cluster_rows = T,
+  cluster_columns = T,
+  clustering_distance_columns = 'euclidean',
+  clustering_method_columns ="ward.D2",
+  clustering_distance_rows = 'euclidean',
+  clustering_method_rows ="ward.D2",
+  row_names_gp = gpar(fontsize=8),
+  column_names_gp = gpar(fontsize=8),
+  column_title = "Sample",row_title = "Gene",
+  heatmap_legend_param = list(title="log2FC",legend_direction="vertical"),top_annotation = top_annotation)
+z3.t <- as.ggplot(z3)
+
+ggsave('11_autophagy_genes_RPF_log2FC.pdf',plot=z3.t,width=10.5,height=5.5)
+ggsave('11_autophagy_genes_RPF_log2FC.png',plot=z3.t,width=10.5,height=5.5)
+write.table(all_sample_trans_level_log2FC_autophagy.sorted,"11_autophagy_genes_RPF_log2FC.txt",quote = F,row.names = T,col.names = T,sep = "\t")
+
+library(dplyr)
+library(reshape2)
+library(ggpubr)
+library(cowplot)
+library(ggsci)
+
+all_sample_trans_level_log2FC_autophagy.sorted["GeneName"] <- rownames(all_sample_trans_level_log2FC_autophagy.sorted)
+all_sample_trans_level_log2FC_autophagy.sorted.melt <- melt(all_sample_trans_level_log2FC_autophagy.sorted)
+all_sample_trans_level_log2FC_autophagy.sorted.melt["Class"] <- AA_starvation_log2FC_sample_info[match(all_sample_trans_level_log2FC_autophagy.sorted.melt$variable,AA_starvation_log2FC_sample_info$SampleID),3]
+all_sample_trans_level_log2FC_autophagy.sorted.melt["BreastCancers"] <- AA_starvation_log2FC_sample_info[match(all_sample_trans_level_log2FC_autophagy.sorted.melt$variable,AA_starvation_log2FC_sample_info$SampleID),6]
+
+all_sample_trans_level_log2FC_autophagy.sorted.melt.filter <- all_sample_trans_level_log2FC_autophagy.sorted.melt[which(all_sample_trans_level_log2FC_autophagy.sorted.melt$Class%in%c("mTORC1 inhibitor","AA starvation","Serum starvation")),]
+all_sample_trans_level_log2FC_autophagy.sorted.melt.filter["NewClass"] <- "None"
+all_sample_trans_level_log2FC_autophagy.sorted.melt.filter[all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$Class=="mTORC1 inhibitor",6] <- "mTORC1 inhibitor"
+all_sample_trans_level_log2FC_autophagy.sorted.melt.filter[which(all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$Class=="AA starvation"&all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$BreastCancers=="Y"),6] <- "BreastCancers:AA"
+all_sample_trans_level_log2FC_autophagy.sorted.melt.filter[which(all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$Class=="AA starvation"&all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$BreastCancers=="N"),6] <- "NonBreastCancers:AA"
+
+all_sample_trans_level_log2FC_autophagy.sorted.melt.filter[which(all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$Class=="Serum starvation"&all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$BreastCancers=="Y"),6] <- "BreastCancers:Serum"
+all_sample_trans_level_log2FC_autophagy.sorted.melt.filter[which(all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$Class=="Serum starvation"&all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$BreastCancers=="N"),6] <- "NonBreastCancers:Serum"
+
+
+
+all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$NewClass <- factor(all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$NewClass,levels = c("mTORC1 inhibitor","BreastCancers:AA","NonBreastCancers:AA","BreastCancers:Serum","NonBreastCancers:Serum"))
+
+myclor <- pal_d3("category20",alpha = 0.5)(3)
+
+pp1 = ggplot(all_sample_trans_level_log2FC_autophagy.sorted.melt.filter,aes(x=NewClass,y=value,fill=NewClass)) + #ggplot作图
+  geom_boxplot()+stat_boxplot(geom="errorbar",lwd=0.5,width=0.2)+geom_jitter(shape = 21,aes(fill=NewClass),width = 0.25) +
+    #stat_summary(fun=mean, geom="point", color="grey60") +
+    theme_cowplot() +
+  theme(axis.text = element_text(size = 16),axis.title = element_text(size = 16),legend.text = element_text(size = 16),
+          legend.title = element_text(size = 16),plot.title = element_text(hjust = 0.5,size = 16,face = 'plain'),legend.position = "none") +
+    labs(title = "Autophagy genes",y='log2FC')+scale_fill_npg()+coord_flip()
+
+  ###组间t检验分析
+labely = max(all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$value)
+compare_means(value ~ NewClass,  data = all_sample_trans_level_log2FC_autophagy.sorted.melt.filter)
+my_comparisons <- list(c("BreastCancers:AA", "mTORC1 inhibitor"),c("BreastCancers:AA","NonBreastCancers:AA"),c("mTORC1 inhibitor","NonBreastCancers:AA"),c("BreastCancers:Serum","NonBreastCancers:Serum"))
+pp1 = pp1 + stat_compare_means(comparisons = my_comparisons,size = 8,method = "wilcox.test")
+
+ggsave("11_autophagy_genes_RPF_log2FC_boxplot.pdf",pp1,width = 8.5,height = 6.5)
+ggsave("11_autophagy_genes_RPF_log2FC_boxplot.png",pp1,width = 8.5,height = 6.5)
+
+
+
+
+pp2 = ggplot(all_sample_trans_level_log2FC_autophagy.sorted.melt.filter,aes(x=NewClass,y=value,fill=NewClass)) + #ggplot作图
+  geom_boxplot()+stat_boxplot(geom="errorbar",lwd=0.5,width=0.2)+geom_jitter(shape = 21,aes(fill=NewClass),width = 0.25) +
+    #stat_summary(fun=mean, geom="point", color="grey60") +
+    theme_cowplot() +
+  theme(axis.text = element_text(size = 16),axis.title = element_text(size = 16),legend.text = element_text(size = 16),
+          legend.title = element_text(size = 16),plot.title = element_text(hjust = 0.5,size = 16,face = 'plain'),
+        axis.ticks.x = element_blank(),axis.text.x = element_blank()) +
+    labs(title = "Autophagy genes",y='log2FC',x="")+scale_fill_npg()+facet_wrap(~GeneName)
+
+  ###组间t检验分析
+labely = max(all_sample_trans_level_log2FC_autophagy.sorted.melt.filter$value)
+compare_means(value ~ NewClass,  data = all_sample_trans_level_log2FC_autophagy.sorted.melt.filter)
+my_comparisons <- list(c("BreastCancers:AA", "mTORC1 inhibitor"),c("BreastCancers:AA","NonBreastCancers:AA"),c("mTORC1 inhibitor","NonBreastCancers:AA"),c("BreastCancers:Serum","NonBreastCancers:Serum"))
+pp2 = pp2 + stat_compare_means(comparisons = my_comparisons,size = 3,method = "wilcox.test")
+
+ggsave("11_autophagy_genes_RPF_log2FC_boxplot2.pdf",pp2,width = 16,height = 12)
+ggsave("11_autophagy_genes_RPF_log2FC_boxplot2.png",pp2,width = 16,height = 12)
+
+
+```
+
