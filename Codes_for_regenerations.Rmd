@@ -1640,3 +1640,135 @@ ggsave("11_autophagy_genes_RPF_log2FC_boxplot2.png",pp2,width = 16,height = 12)
 
 ```
 
+## 20260527-Sign test for topmRNAs
+```{r}
+## 00. read data
+trans_level_RPKM_log2FC <- read.table("./SourceData/all_sample_trans_level_CDS_RPKM_log2FC.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+log2FC_sample_info <- read.table("./SourceData/all_sample_treatment_conditions_log2FC.txt",header = T,sep = "\t",stringsAsFactors = F,check.names = F)
+
+
+## 01. top mRNAs
+longest_trans_info <- read.table("./SourceData/longest.transcripts.info.txt",header = T,stringsAsFactors = F,sep = "\t",check.names = F)
+top_mRNAs_143 <- read.table("./SourceData/143_top_top_like_genes.txt",header = T)
+trans_level_RPKM_log2FC$geneName <- longest_trans_info[match(trans_level_RPKM_log2FC$transcript_id,longest_trans_info$trans_id),5]
+
+top_mRNAs_143_trans_level_log2FC <- na.omit(trans_level_RPKM_log2FC[match(top_mRNAs_143$gene_name,trans_level_RPKM_log2FC$geneName),])
+
+rownames(top_mRNAs_143_trans_level_log2FC) <- top_mRNAs_143_trans_level_log2FC$geneName
+
+top_mRNAs_143_trans_level_log2FC <- top_mRNAs_143_trans_level_log2FC[,log2FC_sample_info[log2FC_sample_info$Class%in%c("AA starvation","mTORC1 inhibitor"),2]]
+## 02. 分组加权符号检验（主分析）
+## 02. 分组加权符号检验（主分析）- 添加平均log2FC列
+bc_studies <- log2FC_sample_info[log2FC_sample_info$BreastCancers == "Y" & 
+                                   log2FC_sample_info$Class %in% c("AA starvation","mTORC1 inhibitor"), 2]
+nonbc_studies <- log2FC_sample_info[log2FC_sample_info$BreastCancers == "N" & 
+                                      log2FC_sample_info$Class %in% c("AA starvation","mTORC1 inhibitor"), 2]
+
+# 初始化结果数据框，新增两列
+results <- data.frame(
+  Gene = rownames(top_mRNAs_143_trans_level_log2FC),
+  BC_up_ratio = NA,
+  BC_up_p = NA,
+  BC_n = NA,
+  BC_up_mean_log2FC = NA,        # 新增：BC上调基因的平均log2FC
+  NonBC_down_ratio = NA,
+  NonBC_down_p = NA,
+  NonBC_n = NA,
+  NonBC_down_mean_log2FC = NA,   # 新增：NonBC下调基因的平均log2FC
+  stringsAsFactors = FALSE
+)
+
+for (i in 1:nrow(top_mRNAs_143_trans_level_log2FC)) {
+  fc <- top_mRNAs_143_trans_level_log2FC[i, ]
+  
+  # --- BC 组：上调比例及平均log2FC ---
+  bc_fc <- fc[bc_studies]
+  bc_n <- sum(!is.na(bc_fc))
+  if (bc_n >= 3) {
+    bc_up <- sum(bc_fc > 0, na.rm = TRUE)
+    bc_up_ratio <- bc_up / bc_n
+    p_up <- binom.test(bc_up, bc_n, p = 0.5, alternative = "greater")$p.value
+    
+    # 计算上调基因的平均log2FC（仅取>0的值）
+    bc_up_vals <- bc_fc[bc_fc > 0 & !is.na(bc_fc)]
+    bc_up_mean <- ifelse(length(bc_up_vals) > 0, mean(bc_up_vals), NA)
+    
+    results[i, c("BC_up_ratio", "BC_up_p", "BC_n", "BC_up_mean_log2FC")] <- 
+      c(bc_up_ratio, p_up, bc_n, bc_up_mean)
+  }
+  
+  # --- NonBC 组：下调比例及平均log2FC ---
+  nonbc_fc <- fc[nonbc_studies]
+  nonbc_n <- sum(!is.na(nonbc_fc))
+  if (nonbc_n >= 3) {
+    nonbc_down <- sum(nonbc_fc < 0, na.rm = TRUE)
+    nonbc_down_ratio <- nonbc_down / nonbc_n
+    p_down <- binom.test(nonbc_down, nonbc_n, p = 0.5, alternative = "greater")$p.value
+    
+    # 计算下调基因的平均log2FC（仅取<0的值，绝对值无符号）
+    nonbc_down_vals <- nonbc_fc[nonbc_fc < 0 & !is.na(nonbc_fc)]
+    nonbc_down_mean <- ifelse(length(nonbc_down_vals) > 0, mean(nonbc_down_vals), NA)
+    
+    results[i, c("NonBC_down_ratio", "NonBC_down_p", "NonBC_n", "NonBC_down_mean_log2FC")] <- 
+      c(nonbc_down_ratio, p_down, nonbc_n, nonbc_down_mean)
+  }
+}
+
+# 多重校正
+results$BC_FDR <- p.adjust(results$BC_up_p, method = "fdr")
+results$NonBC_FDR <- p.adjust(results$NonBC_down_p, method = "fdr")
+
+# 筛选候选基因（示例：BC上调比例≥0.5且NonBC FDR<0.05）
+candidates <- results %>%
+  filter(BC_up_ratio >= 0.5, NonBC_FDR < 0.05)
+
+## 绘图（可选，保持不变）
+library(ggplot2)
+library(ggrepel)
+
+threshold <- 0.7
+candidates$Category <- ifelse(candidates$BC_up_ratio >= threshold & 
+                                candidates$NonBC_down_ratio >= threshold,
+                              "Consistent (BC up, NonBC down)",
+                              "Other")
+
+candidates$Significant <- ifelse(candidates$NonBC_FDR < 0.05,
+                                 "FDR<0.05", "Not significant")
+
+p1 <- ggplot(candidates, aes(x = BC_up_ratio, y = NonBC_down_ratio)) +
+  geom_point(aes(color = Category, size = -log10(NonBC_FDR + 1e-10)), alpha = 0.7) +
+  geom_hline(yintercept = threshold, linetype = "dashed", color = "gray50") +
+  geom_vline(xintercept = threshold, linetype = "dashed", color = "gray50") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "gray70") +
+  scale_color_manual(values = c("Consistent (BC up, NonBC down)" = "red", 
+                                "Other" = "steelblue")) +
+  scale_size_continuous(name = "-log10(fdr)") +
+  labs(x = "Proportion of BC studies with up-regulation",
+       y = "Proportion of NonBC studies with down-regulation",
+       title = "Meta-signature of top mRNAs under amino acid starvation") +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  coord_fixed(xlim = c(0,1), ylim = c(0,1))
+
+ggsave("Ratio of top mRNAs.pdf", p1,width = 8.5, height = 7.5)
+
+
+p2 <- ggplot(candidates, aes(x = BC_up_mean_log2FC, y = NonBC_down_mean_log2FC)) +
+  geom_point(aes(color = Category, size = -log10(NonBC_FDR + 1e-10)), alpha = 0.7) +
+  #geom_hline(yintercept = threshold, linetype = "dashed", color = "gray50") +
+  #geom_vline(xintercept = threshold, linetype = "dashed", color = "gray50") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted", color = "gray70") +
+  scale_color_manual(values = c("Consistent (BC up, NonBC down)" = "red", 
+                                "Other" = "steelblue")) +
+  scale_size_continuous(name = "-log10(fdr)") +
+  labs(x = "Mean log2FC in breast cancers under AA starvation",
+       y = "Mean log2FC in non-breast cancers under AA starvation",
+       title = "Meta-signature of top mRNAs under amino acid starvation") +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  coord_fixed(xlim = c(0,2), ylim = c(-2,0))
+
+ggsave("Scatterplot of log2FC in BC and nonBC.pdf",p2, width = 8.5, height = 7.5)
+
+write.table(candidates,"topmRNAs_Sign_Test.txt",quote = F,row.names = T,sep = "\t",col.names = T)
+```
